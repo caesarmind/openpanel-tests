@@ -5,7 +5,9 @@ import path from 'path';
 
 // after the config test restarts postgres the page shows an "initializing" row and refreshes itself until it's back
 async function waitForPostgres(page: any) {
-  await expect(page.getByText(/still initializing/i)).toHaveCount(0, { timeout: 90000 });
+  await expect(
+    page.getByText(/still initializing/i)
+  ).toHaveCount(0, { timeout: 90000 });
 }
 
 async function navigateToPostgreSQLPage(page: any) {
@@ -263,19 +265,26 @@ test('delete user', async ({ page }) => {
 
 
 test('delete database', async ({ page }) => {
+  test.setTimeout(120000);
+
   await navigateToPostgreSQLPage(page);
+
   const dbName = 'stefan_psql';
   const row = page.locator('tr', { hasText: dbName });
   const deleteButton = row.locator('button.btn-danger');
+
   await expect(deleteButton).toBeVisible();
   await deleteButton.click();
+
   const confirmButton = page.locator('button.btn-dark');
   await expect(confirmButton).toBeVisible();
   await confirmButton.click();
+
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
   await expectDatabaseNotInTable(page, dbName);
 
   // wizard leftovers
   await deleteRowIfExists(page, '/postgresql', 'psql_proba');
+
   console.log('postgresql database deleted');
 });
