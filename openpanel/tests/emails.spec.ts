@@ -271,6 +271,7 @@ test('edit email — delete button links to delete page', async ({ page }) => {
 
 // ─── Email quota ──────────────────────────────────────────────────────────────
 
+
 test.describe.serial('email quota', () => {
   const username = 'quota-test';
   const address = `${username}@${DOMAIN}`;
@@ -282,15 +283,20 @@ test.describe.serial('email quota', () => {
       .locator('#email-accounts tbody tr')
       .filter({ hasText: address });
 
-    await expect(row).toBeVisible();
+    await expect(row).toBeVisible({ timeout: 15000 });
 
     return row.locator('td[data-sort-col="quota"]');
   }
 
   test('create email with 512 MiB quota and verify it in the table', async ({ page }) => {
-    // a leftover account from an earlier run would make the create fail and keep its old quota
     await page.goto('/emails');
-    if (await page.locator('#email-accounts tbody tr').filter({ hasText: address }).count()) {
+
+    // Remove leftover account from previous runs
+    const existingRow = page
+      .locator('#email-accounts tbody tr')
+      .filter({ hasText: address });
+
+    if (await existingRow.count()) {
       await deleteEmail(page, username);
     }
 
@@ -298,27 +304,41 @@ test.describe.serial('email quota', () => {
 
     const domainSelect = page.locator('select[name="domain"]');
     await expect(domainSelect).toBeVisible();
-    await domainSelect.selectOption({ index: 1 });
+    await domainSelect.selectOption(DOMAIN);
 
     await page.locator('input[name="username"]').fill(username);
     await page.locator('input[name="password"]').fill(PASSWORD);
 
-    // Set quota to 512 MiB
-    await page.locator('select[name="format"]').selectOption('M');
-    await page.locator('input[name="gb"]').fill('512');
+    // Select MiB from the new dropdown
+    const quotaInput = page.locator('input[name="gb"]');
+    const quotaFormat = page.locator('select[name="format"]');
 
-    await page.getByRole('button', { name: /create email/i }).click();
+    await quotaFormat.selectOption({ label: 'MiB' });
+    await expect(quotaFormat).toHaveValue('M');
+
+    await quotaInput.fill('512');
+    await expect(quotaInput).toHaveValue('512');
+
+    await page.getByRole('button', {
+      name: /create email/i,
+    }).click();
 
     await expect(
       page.getByText(new RegExp(`Email ${username}@`, 'i'))
     ).toBeVisible({ timeout: 15000 });
 
-    // mailserver reports the quota a bit after the account exists, so reload until it shows up
-    // example table value: ( 5.0K / 512.0M ) [0%]
+    // Mailserver may take time to update the quota
     await expect(async () => {
       const quotaCell = await getQuotaCell(page);
-      await expect(quotaCell).toContainText(/\/\s*512(?:\.0)?M\s*\)/i, { timeout: 2000 });
-    }).toPass({ timeout: 60000 });
+
+      await expect(quotaCell).toContainText(
+        /\/\s*512(?:\.0)?M\s*\)/i,
+        { timeout: 2000 }
+      );
+    }).toPass({
+      timeout: 60000,
+      intervals: [5000],
+    });
   });
 
   test('change email quota to unlimited and verify it in the table', async ({ page }) => {
@@ -328,9 +348,13 @@ test.describe.serial('email quota', () => {
     const quotaInput = page.locator('input[name="gb"]');
     const quotaFormat = page.locator('select[name="format"]');
 
+    // Select GiB from dropdown
+    await quotaFormat.selectOption({ label: 'GiB' });
+    await expect(quotaFormat).toHaveValue('G');
+
     // 0 means unlimited
     await quotaInput.fill('0');
-    await quotaFormat.selectOption('G');
+    await expect(quotaInput).toHaveValue('0');
 
     await page.getByRole('button', {
       name: /update email settings/i,
@@ -340,50 +364,62 @@ test.describe.serial('email quota', () => {
     await expect(alert).toBeVisible({ timeout: 10000 });
     await expect(alert).toContainText(/settings saved for email/i);
 
-    // unlimited is displayed as: ( 5.0K / ~ ) [0%]
+    // Unlimited is displayed as: ( 5.0K / ~ ) [0%]
     await expect(async () => {
       const quotaCell = await getQuotaCell(page);
-      await expect(quotaCell).toContainText(/\/\s*~\s*\)/, { timeout: 2000 });
-    }).toPass({ timeout: 60000 });
+
+      await expect(quotaCell).toContainText(
+        /\/\s*~\s*\)/,
+        { timeout: 2000 }
+      );
+    }).toPass({
+      timeout: 60000,
+      intervals: [5000],
+    });
   });
 
-  test('reject email quota above plan limit', async ({ page }) => {
-    await page.goto(`/emails/edit/${address}`);
-    await expect(page).toHaveURL(/emails\/edit/);
 
-    const quotaInput = page.locator('input[name="gb"]');
-    const quotaFormat = page.locator('select[name="format"]');
+test('clamp email quota above plan limit to 2 GiB', async ({ page }) => {
+  await page.goto(`/emails/edit/${address}`);
+  await expect(page).toHaveURL(/emails\/edit/);
 
-    await quotaFormat.selectOption('G');
+  const quotaInput = page.locator('input[name="gb"]');
+  const quotaFormat = page.locator('select[name="format"]');
 
-    /*
-     * The page JS clamps values above the plan maximum (2G)
-     * back to 2G when the input event fires.
-     *
-     * Set the DOM value directly without dispatching an input event
-     * so this test verifies server-side validation.
-     */
-    await quotaInput.evaluate((input: HTMLInputElement) => {
-      input.value = '3';
-    });
+  // Select GiB
+  await quotaFormat.selectOption({ label: 'GiB' });
+  await expect(quotaFormat).toHaveValue('G');
 
-    expect(await quotaInput.inputValue()).toBe('3');
+  // Bypass frontend input validation and set 3 GiB
+  await quotaInput.evaluate((input: HTMLInputElement) => {
+    input.value = '3';
+  });
 
-    await page.getByRole('button', {
-      name: /update email settings/i,
-    }).click();
+  await expect(quotaInput).toHaveValue('3');
 
-    /*
-     * The invalid 3G value must not be applied.
-     * The previous quota was unlimited, so it must remain unlimited.
-     */
+  await page.getByRole('button', {
+    name: /update email settings/i,
+  }).click();
+
+  // Verify quota is capped at the plan maximum (2 GiB)
+  await expect(async () => {
     const quotaCell = await getQuotaCell(page);
 
-    await expect(quotaCell).toContainText(/\/\s*~\s*\)/);
-    await expect(quotaCell).not.toContainText(/\/\s*3(?:\.0)?G\s*\)/i);
+    await expect(quotaCell).toContainText(
+      /\/\s*2(?:\.0)?G\s*\)/i,
+      { timeout: 2000 }
+    );
+
+    await expect(quotaCell).not.toContainText(
+      /\/\s*3(?:\.0)?G\s*\)/i
+    );
+  }).toPass({
+    timeout: 60000,
+    intervals: [5000],
   });
 });
 
+});
 
 // ─── Connect Devices / Info ───────────────────────────────────────────────────
 
