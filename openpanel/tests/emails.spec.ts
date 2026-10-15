@@ -304,8 +304,8 @@ test.describe.serial('email quota', () => {
     await page.locator('input[name="password"]').fill(PASSWORD);
 
     // Set quota to 512 MiB
-    await page.locator('input[name="gb"]').fill('512');
     await page.locator('select[name="format"]').selectOption('M');
+    await page.locator('input[name="gb"]').fill('512');
 
     await page.getByRole('button', { name: /create email/i }).click();
 
