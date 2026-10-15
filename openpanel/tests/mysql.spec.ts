@@ -161,18 +161,29 @@ test('create user', async ({ page }) => {
 
 
 
-test('change password', async ({ page }) => {
-  await page.goto(`/mysql/users`);
 
-  await page.getByRole('link', { name: ' Change Password' }).click();
-  await expect(page).toHaveURL(/.*mysql\/password/);  
+
+test('change password', async ({ page }) => {
+  await page.goto('/mysql/users');
+
+  const firstRow = page.locator('#users-table tbody tr:visible').first();
+  const username = (await firstRow.locator('[data-sort-col="username"]').innerText()).trim();
+
+  await firstRow.getByRole('link', { name: 'Change Password' }).click();
+  await expect(page).toHaveURL(/.*mysql\/password/);
+
   await page.locator('#generatePassword').click();
   await page.getByRole('button', { name: 'Change Password' }).click();
-  await expect(page).toHaveURL(/.*mysql\/users/);  
-  await expect(page.locator('body')).toContainText(/successfully changed password for user stefan_user/i);
-  
+
+  await expect(page).toHaveURL(/.*mysql\/users/);
+  await expect(page.locator('body')).toContainText(
+    `successfully changed password for user ${username}`,
+    { ignoreCase: true }
+  );
+
   console.log('change password working');
 });
+
 
 
 
