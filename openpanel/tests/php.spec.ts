@@ -411,11 +411,6 @@ test('change default php version', async ({ page }) => {
 
   console.log(`Changing default PHP version to: ${randomVersion}`);
 
-  // Select new version
-  await page
-    .locator(`input[name="new_php_version"][value="${randomVersion}"]`)
-    .check();
-
   // Submit button changes from:
   // "Choose a PHP version"
   // to:
@@ -424,7 +419,11 @@ test('change default php version', async ({ page }) => {
     name: new RegExp(`Set PHP ${randomVersion} as default`, 'i')
   });
 
-  await expect(submitButton).toBeEnabled();
+  // Alpine starting up can reset a radio ticked right after load, so tick until the button follows
+  await expect(async () => {
+    await page.locator(`input[name="new_php_version"][value="${randomVersion}"]`).check();
+    await expect(submitButton).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 15000 });
 
   await submitButton.click();
 
@@ -456,13 +455,15 @@ test('change default php version', async ({ page }) => {
     `input[name="new_php_version"][value="${oldVersion}"]`
   );
 
-  await oldVersionRadio.check();
-
   const restoreButton = page.getByRole('button', {
     name: new RegExp(`Set PHP ${oldVersion} as default`, 'i')
   });
 
-  await expect(restoreButton).toBeEnabled();
+  // the page just reloaded after the switch, same Alpine startup race as above
+  await expect(async () => {
+    await oldVersionRadio.check();
+    await expect(restoreButton).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 15000 });
 
   await restoreButton.click();
 
