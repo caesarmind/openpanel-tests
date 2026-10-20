@@ -1791,8 +1791,9 @@ test.describe('DELETE /api/process-manager/:pid', () => {
   });
 
   test('rejects a pid that is not one of the caller\'s processes', async () => {
-    const res = await api.delete('/api/process-manager/1');
-    expect([403, 500]).toContain(res.status());
+    // pids are per container, so 1 is the caller's own container init and is allowed, use one nobody has
+    const res = await api.delete('/api/process-manager/4194303');
+    expect(res.status()).toBe(403);
   });
 });
 // no mutating test here: killing a real PID is destructive and there's no
