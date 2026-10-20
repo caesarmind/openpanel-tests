@@ -22,6 +22,23 @@ test.describe.configure({ mode: 'serial' });
 
 const repoRow = (page: Page, name: string) => page.locator(`tr#repo-${name}`);
 
+// a run that failed halfway leaves its repositories behind, which would make create fail next time
+test.beforeAll(async ({ browser }, testInfo) => {
+  // a plain browser.newPage() wouldn't get the project's login or baseURL
+  const ctx = await browser.newContext(testInfo.project.use as any);
+  const page = await ctx.newPage();
+  await page.goto('/git');
+  for (const name of [LOCAL_REPO, REMOTE_REPO]) {
+    if (await repoRow(page, name).count()) {
+      await page.evaluate(async (repo) => {
+        const body = new URLSearchParams({ action: 'delete', repo, csrf_token: (window as any).csrf_token });
+        await fetch('/git', { method: 'POST', body });
+      }, name);
+    }
+  }
+  await ctx.close();
+});
+
 async function openAddForm(page: Page) {
   await page.goto('/git');
   await page.locator('#add-repository').click();
@@ -148,7 +165,7 @@ test('create remote repository', async ({ page }) => {
   await page.locator('#name').fill(REMOTE_REPO);
   await page.locator('#domain').selectOption(DOMAIN);
   await page.locator('#target_dir').fill(REMOTE_DIR);
-  await page.locator('input[name="deploy_mode"][value="automatic"]').check();
+  await page.locator('form:has(input[name="action"][value="create"]) input[name="deploy_mode"][value="automatic"]').check();
   await page.getByRole('button', { name: 'Create', exact: true }).click();
 
   await expect(page.getByText(new RegExp(`Repository ${REMOTE_REPO} cloned and branch \\S+ deployed to ${REMOTE_DIR}`))).toBeVisible({ timeout: 90_000 });
@@ -200,7 +217,7 @@ test('change deployment mode', async ({ page }) => {
 
 test('search repositories', async ({ page }) => {
   await page.goto('/git');
-  const search = page.getByPlaceholder(/search/i).first();
+  const search = page.locator('section[aria-label="Repositories"] input[type="search"]');
   await search.fill(REMOTE_REPO);
   await expect(repoRow(page, REMOTE_REPO)).toBeVisible();
   await expect(repoRow(page, LOCAL_REPO)).toBeHidden();
