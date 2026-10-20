@@ -140,7 +140,12 @@ test('server info page', async ({ page }) => {
   await expect(page.locator('#ip')).toHaveText(infoData.ip);
 
   // Switch to Hosting Plan tab
-  await page.getByRole('link', { name: 'Hosting Plan' }).click();
+  // the tab only exists with the modern menu, the page itself switches on the hash
+  if (await page.locator('#page-tabs').count()) {
+    await page.locator('#page-tabs').getByRole('link', { name: 'Hosting Plan' }).click();
+  } else {
+    await page.goto('/server/info#plan');
+  }
 
   await expect(page.locator('tbody[data-tab="plan"]')).toBeVisible();
 
