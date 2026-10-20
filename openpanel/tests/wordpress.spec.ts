@@ -500,8 +500,12 @@ test('maintenance mode', async ({ page }) => {
 test('cache flush', async ({ page }) => {
   await page.goto('/website?domain=wp.tests.openpanel.org');
 
-  await page.getByRole('button', { name: 'Purge WP Cache' }).click();
-  await expect(page.getByText(/Cache flushed successfully/)).toBeVisible({ timeout: 10000 });
+  // the old Purge WP Cache button became Purge all on the Cache tab, it also clears Varnish and Redis
+  await openSiteTab(page, 'caching');
+  const purge = page.getByRole('button', { name: /Purge all/ });
+  await expect(purge).toBeEnabled({ timeout: 30000 });
+  await purge.click();
+  await expect(page.getByText(/All caches purged for wp\.tests\.openpanel\.org/)).toBeVisible({ timeout: 30000 });
 
   console.log('flush wp cache is working');
 });
@@ -545,16 +549,13 @@ test('waf on/off', async ({ page }) => {
   const message = await page.getByText(/Firewall for wp\.tests\.openpanel\.org is now (On|Off)/).innerText();
   const isOn = message.includes('On');
 
-  await page.waitForTimeout(5000);
-
-  const response = await page.request.get('https://wp.tests.openpanel.org');
-
+  // a clean request passes either way, only an attack-looking one shows the firewall is on
+  const attackUrl = `https://wp.tests.openpanel.org/?q=<script>alert(1)</script>`;
+  const status = async () => (await page.request.get(attackUrl, { failOnStatusCode: false })).status();
   if (isOn) {
-    // WAF ON
-    expect([403, 406, 409, 422]).toContain(response.status());
+    await expect.poll(status, { timeout: 30_000 }).toBeGreaterThanOrEqual(403);
   } else {
-    // WAF OFF
-    expect(response.status()).toBe(200);
+    await expect.poll(status, { timeout: 30_000 }).toBe(200);
   }
   console.log('wp manager firewall on/off is working as expected!');
 });
@@ -563,7 +564,7 @@ test('waf on/off', async ({ page }) => {
 test('wp remove', async ({ page }) => {
   await page.goto('/website?domain=wp.tests.openpanel.org');
 
-  await page.locator('a#remove-tab').click();
+  await openSiteTab(page, 'remove');
 
   // Match despite the icon glyph being part of the accessible name
   const uninstallButton = page.getByRole('button', {
