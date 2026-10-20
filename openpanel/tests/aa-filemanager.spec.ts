@@ -318,8 +318,8 @@ test('delete file to trash', async ({ page }) => {
 test('restore file from trash', async ({ page }) => {
   await navigateToFiles(page);
 
-  // Navigate to Trash
-  await page.locator('#page-tabs a[href="/files.trash"]').click();
+  // the trash tab is only there with the modern menu, so go by URL
+  await page.goto('/files.trash');
 
   const trashRow = page.locator(
     `#filemanager_table tbody tr[data-file="${FILE_NAME}"]`
@@ -341,7 +341,7 @@ test('restore file from trash', async ({ page }) => {
   await expect(trashRow).toHaveCount(0);
 
   // Navigate back to File Manager
-  await page.locator('#page-tabs a[href="/files"]').click();
+  await navigateToFiles(page);
 
   // Verify restored file exists in root directory
   await expect(

@@ -49,8 +49,11 @@ test('list', async ({ page }) => {
   }
 
   await expect(page.locator('a[href="/cronjobs/new"]')).toBeVisible();
-  await expect(page.locator('#page-tabs a[href="/cronjobs/editor"]')).toBeVisible();
-  await expect(page.locator('#page-tabs a[href="/cronjobs/logs"]')).toBeVisible();
+  // the File Editor and Logs tabs only exist with the modern menu
+  if (await page.locator('#page-tabs').count()) {
+    await expect(page.locator('#page-tabs a[href="/cronjobs/editor"]')).toBeVisible();
+    await expect(page.locator('#page-tabs a[href="/cronjobs/logs"]')).toBeVisible();
+  }
   // The list may contain existing jobs; an empty-state check is not appropriate.
 });
 
