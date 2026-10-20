@@ -379,40 +379,35 @@ test.describe.serial('email quota', () => {
   });
 
 
-test('clamp email quota above plan limit to 2 GiB', async ({ page }) => {
+test('clamp email quota above plan limit', async ({ page }) => {
   await page.goto(`/emails/edit/${address}`);
   await expect(page).toHaveURL(/emails\/edit/);
 
+  // the plan's limit is printed under the field, nothing to clamp on an unlimited plan
+  const limitText = await page.locator('body').innerText();
+  const m = limitText.match(/Maximum allowed:\s*([\d.]+)\s*([BKMGT])/i);
+  test.skip(!m, 'plan has no email quota limit');
+  const max = Number(m![1]);
+  const unit = m![2].toUpperCase();
+
   const quotaInput = page.locator('input[name="gb"]');
   const quotaFormat = page.locator('select[name="format"]');
+  await quotaFormat.selectOption(unit === 'K' ? 'k' : unit);
 
-  // Select GiB
-  await quotaFormat.selectOption({ label: 'GiB' });
-  await expect(quotaFormat).toHaveValue('G');
-
-  // Bypass frontend input validation and set 3 GiB
-  await quotaInput.evaluate((input: HTMLInputElement) => {
-    input.value = '3';
-  });
-
-  await expect(quotaInput).toHaveValue('3');
+  // bypass the frontend check and ask for more than the plan allows
+  const over = String(max + 1);
+  await quotaInput.evaluate((input: HTMLInputElement, v: string) => { input.value = v; }, over);
+  await expect(quotaInput).toHaveValue(over);
 
   await page.getByRole('button', {
     name: /update email settings/i,
   }).click();
 
-  // Verify quota is capped at the plan maximum (2 GiB)
+  const shown = (n: number) => new RegExp(`\\/\\s*${n}(?:\\.0)?${unit}\\s*\\)`, 'i');
   await expect(async () => {
     const quotaCell = await getQuotaCell(page);
-
-    await expect(quotaCell).toContainText(
-      /\/\s*2(?:\.0)?G\s*\)/i,
-      { timeout: 2000 }
-    );
-
-    await expect(quotaCell).not.toContainText(
-      /\/\s*3(?:\.0)?G\s*\)/i
-    );
+    await expect(quotaCell).toContainText(shown(max), { timeout: 2000 });
+    await expect(quotaCell).not.toContainText(shown(max + 1));
   }).toPass({
     timeout: 60000,
     intervals: [5000],
