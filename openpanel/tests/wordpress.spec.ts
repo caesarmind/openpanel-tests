@@ -327,8 +327,9 @@ test('general options', async ({ page }) => {
   const blogPublic = page.locator('#blog_public');
   const defaultPingStatus = page.locator('#default_ping_status');
 
-  // Wait until settings are loaded
+  // Wait until settings are loaded, they arrive a moment after the tab opens and would overwrite anything changed before
   await expect(blogName).toBeVisible();
+  await expect(blogName).not.toHaveValue('');
   await expect(blogDescription).toBeVisible();
   await expect(adminEmail).toBeVisible();
 
