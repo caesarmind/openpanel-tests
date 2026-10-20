@@ -264,7 +264,7 @@ test('wp manager data', async ({ page }) => {
     '#database-table-prefix',
     '#database-password',
     '#database-name',
-    '#wp_cache_type'
+    // #wp_cache_type went away when caching moved to its own Cache tab, the cache flush test covers that
   ];
 
   for (const selector of selectors) {
