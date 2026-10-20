@@ -124,8 +124,8 @@ const { test, expect } = require('@playwright/test');
       const table = page.locator('table tbody');
       await expect(table).not.toContainText('Dashboard', { timeout: 5000 });
 
-      // Sidebar should not contain the favorite
-      await expect(page.getByText('Dashboard')).toHaveCount(0);
+      // Sidebar should not contain the favorite, the header breadcrumb still says Dashboard so look at the favorites list only
+      await expect(page.locator('#favorites-list a[href="/dashboard"]')).toHaveCount(0);
 
       await page.goto(`/dashboard`);
       const starBtn = page.locator('#addFavoriteBtn');
