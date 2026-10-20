@@ -198,7 +198,11 @@ test('grant CREATE ROUTE privilege', async ({ page }) => {
   await expect(page).toHaveURL(/.*mysql\/assign/);
 
   await page.locator('select[name="db_user"]').selectOption('stefan_user');
-  await page.locator('select[name="database_name"]').selectOption('stefan_baza');
+  // picking the database loads the user's current privileges, which resets every checkbox, so wait for it before ticking any
+  await Promise.all([
+    page.waitForResponse(resp => resp.url().includes('/mysql/privileges/')),
+    page.locator('select[name="database_name"]').selectOption('stefan_baza'),
+  ]);
 
   await page.getByRole('checkbox', { name: 'ALTER', exact: true }).check();
   await page.getByRole('checkbox', { name: 'CREATE ROUTINE' }).check();
@@ -276,6 +280,7 @@ test('grant ALL PRIVILEGES', async ({ page }) => {
   await page.locator('select[name="db_user"]').selectOption('stefan_user');
 
   await Promise.all([
+    page.waitForResponse(resp => resp.url().includes('/mysql/privileges/')),
     page.locator('select[name="database_name"]').selectOption('stefan_baza'),
   ]);
 
