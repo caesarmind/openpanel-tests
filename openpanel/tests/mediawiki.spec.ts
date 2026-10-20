@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openSiteTab } from '../site-tabs';
 
 const DOMAIN = 'mediawiki.tests.openpanel.org';
 const SITE_NAME = 'My Wiki';
@@ -62,7 +63,7 @@ test.describe('MediaWiki autoinstaller', () => {
 
   test('5. remove app', async ({ page }) => {
     await page.goto(`/website?domain=${DOMAIN}`);
-    await page.locator('#remove-tab').click();
+    await openSiteTab(page, 'remove');
 
     await page.getByRole('button', { name: 'Delete Application' }).click();
     await page.getByRole('button', { name: 'Confirm delete' }).click();

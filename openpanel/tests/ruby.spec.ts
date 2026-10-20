@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openSiteTab } from '../site-tabs';
 
 const DOMAIN = 'ruby.tests.openpanel.org';
 const APP_NAME = 'rubyaplikacija';
@@ -81,7 +82,7 @@ test.describe('Ruby autoinstaller', () => {
 
   test('5. remove app', async ({ page }) => {
     await page.goto(`/website?domain=${DOMAIN}`);
-    await page.locator('#remove-tab').click();
+    await openSiteTab(page, 'remove');
 
     await page.getByRole('button', { name: 'Delete Application' }).click();
     await page.getByRole('button', { name: 'Confirm delete' }).click();

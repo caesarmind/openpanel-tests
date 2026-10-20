@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openSiteTab } from '../site-tabs';
 
 const domain = 'wp.tests.openpanel.org';
 
@@ -314,7 +315,7 @@ test('general options', async ({ page }) => {
 
   // Open website settings
   await page.goto(websiteUrl);
-  await page.locator('#settings-tab').click();
+  await openSiteTab(page, 'settings');
 
   // General settings locators
   const blogName = page.locator('#blogname');
@@ -408,7 +409,7 @@ test('general options', async ({ page }) => {
 
   // Reload to verify persistence
   await page.goto(websiteUrl);
-  await page.locator('#settings-tab').click();
+  await openSiteTab(page, 'settings');
 
   // Wait until saved values are loaded again
   await expect(blogName).toHaveValue(newBlogName, {
@@ -438,7 +439,7 @@ test('general options', async ({ page }) => {
 
 test('maintenance mode', async ({ page }) => {
   await page.goto('/website?domain=wp.tests.openpanel.org');
-  await page.locator('#maintenance-tab').click();
+  await openSiteTab(page, 'maintenance');
 
   // Wait for the status span to appear and get its text
   await page.waitForSelector('#current_maintenance_mode_status span');
@@ -467,7 +468,7 @@ test('maintenance mode', async ({ page }) => {
 
   // --- Round 2: toggle back to original state and verify ---
   await page.goto('/website?domain=wp.tests.openpanel.org');
-  await page.locator('#maintenance-tab').click();
+  await openSiteTab(page, 'maintenance');
   await page.locator('#runMaintenance_action').click();
 
   if (wasEnabled) {
