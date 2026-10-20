@@ -306,7 +306,7 @@ test('revoke privileges', async ({ page }) => {
   await page.goto('/mysql/users');
 
   // Open Remove User from Database page
-  await page.locator('a[href="/mysql/remove"]').click();
+  await page.locator('main a[href="/mysql/remove"]').click();
 
   await expect(page).toHaveURL(/\/mysql\/remove/);
 
