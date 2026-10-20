@@ -28,7 +28,8 @@ test('ai assistant drawer opens and closes', async ({ page }) => {
 
   // Escape closes it too
   await btn.click();
-  await expect(drawer).toBeVisible();
+  // Escape only closes once the open class is on, which lands a frame after it's shown
+  await expect(drawer).toHaveClass(/ai-open/);
   await page.keyboard.press('Escape');
   await expect(drawer).toBeHidden();
   console.log('ai assistant drawer is working');
