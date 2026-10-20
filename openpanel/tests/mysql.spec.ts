@@ -171,7 +171,8 @@ test('change password', async ({ page }) => {
 
   await firstRow.getByRole('link', { name: 'Change Password' }).click();
   await expect(page).toHaveURL(/.*mysql\/password/);
-
+  // the generate button only works once the page's script has run
+  await page.waitForLoadState('load');
   await page.locator('#generatePassword').click();
   await page.getByRole('button', { name: 'Change Password' }).click();
 

@@ -86,6 +86,8 @@ test('change password', async ({ page }) => {
   await page.goto('/postgresql/users');
   await page.getByRole('link', { name: ' Change Password' }).click();
   await expect(page).toHaveURL(/postgresql\/password/);
+  // the generate button only works once the page's script has run
+  await page.waitForLoadState('load');
   await page.locator('#generatePassword').click();
   await page.getByRole('button', { name: 'Change Password' }).click();
   await expect(page).toHaveURL(/postgresql\/users/);
@@ -131,7 +133,8 @@ test('assign user to database', async ({ page }) => {
 test('revoke user from database', async ({ page }) => {
   await page.goto('/postgresql/users');
 
-  await page.getByRole('link', { name: /Remove User/i }).click();
+  // the classic sidebar has a Remove User link too
+  await page.locator('main').getByRole('link', { name: /Remove User/i }).click();
 
   await expect(page).toHaveURL(/postgresql\/remove/);
 
@@ -241,7 +244,7 @@ INSERT INTO users VALUES (1, 'John');
   await expect(page).toHaveURL(/postgresql\/import\/stefan_psql/);
   const [response] = await Promise.all([
       page.waitForResponse(resp => resp.url().includes('/postgresql/info') && resp.status() === 200),
-      page.getByRole('link', { name: 'Import' }).click(),
+      page.locator('main').getByRole('link', { name: 'Import', exact: true }).click(),
     ]);
   await page.locator('select[name="database_name"]').selectOption('stefan_psql');
   await page.locator('input[name="db_file"]').setInputFiles(tempFilePath);
