@@ -258,7 +258,8 @@ test('wp manager data', async ({ page }) => {
   expect(databaseSize).toMatch(/\b\d+(\.\d+)?\s?(K|M|G|T)?B\b/i);
 
   // db logins
-  await expect(page.locator('#database-host')).toHaveText(/mysql|mariadb/i);
+  // localhost means the socket, accounts that have it mounted use that instead of the mysql/mariadb service name
+  await expect(page.locator('#database-host')).toHaveText(/localhost|mysql|mariadb/i);
   const selectors = [
     '#database-table-prefix',
     '#database-password',
