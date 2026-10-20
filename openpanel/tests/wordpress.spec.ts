@@ -448,6 +448,7 @@ test('maintenance mode', async ({ page }) => {
   const wasEnabled = statusText.trim().toLowerCase() === 'enabled';
 
   // --- Round 1: toggle to the opposite state and verify ---
+  await expect(page.locator('#runMaintenance_action')).toHaveAttribute('data-action', wasEnabled ? 'disable' : 'enable');
   await page.locator('#runMaintenance_action').click();
 
   if (wasEnabled) {
@@ -470,6 +471,8 @@ test('maintenance mode', async ({ page }) => {
   // --- Round 2: toggle back to original state and verify ---
   await page.goto('/website?domain=wp.tests.openpanel.org');
   await openSiteTab(page, 'maintenance');
+  // the button only gets its enable/disable action once the status has loaded
+  await expect(page.locator('#runMaintenance_action')).toHaveAttribute('data-action', wasEnabled ? 'enable' : 'disable');
   await page.locator('#runMaintenance_action').click();
 
   if (wasEnabled) {
