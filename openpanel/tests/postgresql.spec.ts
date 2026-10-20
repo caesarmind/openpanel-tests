@@ -244,7 +244,8 @@ INSERT INTO users VALUES (1, 'John');
   await expect(page).toHaveURL(/postgresql\/import\/stefan_psql/);
   const [response] = await Promise.all([
       page.waitForResponse(resp => resp.url().includes('/postgresql/info') && resp.status() === 200),
-      page.locator('main').getByRole('link', { name: 'Import', exact: true }).click(),
+      // the general import page is the one that loads /postgresql/info, the sidebar link to it only exists in some menus
+      page.goto('/postgresql/import'),
     ]);
   await page.locator('select[name="database_name"]').selectOption('stefan_psql');
   await page.locator('input[name="db_file"]').setInputFiles(tempFilePath);
