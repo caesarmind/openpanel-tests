@@ -28,8 +28,12 @@ test('list databases', async ({ page }) => {
 
 
 test('create database', async ({ page }) => {
-  await navigateToMongoDBPage(page);
-  await page.getByRole('link', { name: 'New Database' }).click();
+  // a fresh account's MongoDB was only just started by the list test, the form sends us back until it answers
+  await expect(async () => {
+    await navigateToMongoDBPage(page);
+    await page.getByRole('link', { name: 'New Database' }).click();
+    await expect(page.getByRole('textbox', { name: 'Database Name' })).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 120_000, intervals: [5000] });
   await page.getByRole('textbox', { name: 'Database Name' }).fill('stefan_mongo');
   await page.getByRole('button', { name: 'Create Database' }).click();
   await expect(page.locator('body')).toContainText(/successfully created/i, { timeout: 25000 });
