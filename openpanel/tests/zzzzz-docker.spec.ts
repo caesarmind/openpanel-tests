@@ -178,7 +178,7 @@ test('add new service form loads', async ({ page }) => {
   await expect(page.locator('input#image')).toBeVisible();
   await expect(page.locator('input#cpu')).toBeVisible();
   await expect(page.locator('input#ram_amount')).toBeVisible();
-  await expect(page.locator('button[type="submit"]')).toBeVisible();
+  await expect(page.locator('main button[type="submit"]')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).locator('a[href="/containers"]')).toBeVisible();
 });
 
@@ -189,7 +189,7 @@ test('add new service - invalid name shows error', async ({ page }) => {
   const serviceName = page.locator('#service_name');
   const cpu = page.locator('#cpu');
   const ram = page.locator('#ram_amount');
-  const submit = page.locator('button[type="submit"]');
+  const submit = page.locator('main button[type="submit"]');
 
   // Invalid service name
   await image.fill('nginx:latest');
@@ -365,7 +365,13 @@ test('change mysql page loads', async ({ page }) => {
     section.getByText('Percona', { exact: true })
   ).toBeVisible();
 
-  // Warning about what happens when switching database servers
+  // with databases left from earlier specs the switch is blocked and says why, otherwise it warns what switching does
+  const blocked = section.getByText(/first remove all databases from your account/i);
+  if (await blocked.isVisible()) {
+    await expect(section.getByRole('link', { name: 'Go to Databases' })).toBeVisible();
+    await expect(section.locator('input[name="new_sql"]:not(:checked)').first()).toBeDisabled();
+    return;
+  }
   await expect(
     section.getByText(
       /Switching stops the current database server, deletes its data and starts the new one/i

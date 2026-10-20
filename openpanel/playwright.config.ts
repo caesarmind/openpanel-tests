@@ -27,6 +27,7 @@ export default defineConfig({
       name: 'setup',
       testMatch: /auth\.setup\.ts/,
     },
+    // classic menu (menu_style=classic), kept for legacy
     {
       name: 'tests',
       testDir: './tests',
@@ -34,6 +35,16 @@ export default defineConfig({
       dependencies: ['setup'],
       use: {
         storageState: '.auth/session.json',
+      },
+    },
+    // modern menu (menu_style=modern): same specs, menu-dependent steps branch on isModern()
+    {
+      name: 'tests-modern',
+      testDir: './tests',
+      testMatch: /.*\.spec\.ts/,
+      dependencies: ['setup'],
+      use: {
+        storageState: '.auth/session-modern.json',
       },
     },
   ],
