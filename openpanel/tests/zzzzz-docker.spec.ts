@@ -88,6 +88,9 @@ test('edit cpu, ram and toggle container state for all rows', async ({ page }) =
 
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
+    // cron (ofelia) restart-loops on an account with no cron jobs, so a live limit change can hit it mid-restart
+    const service = (await row.locator('form[action^="/containers/cpu/"]').getAttribute('action'))?.split('/').pop();
+    if (service === 'cron') continue;
     await row.hover();
 
     // 1. EDIT CPU

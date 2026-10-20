@@ -66,8 +66,11 @@ test('create user', async ({ page }) => {
 
 test('change password', async ({ page }) => {
   await page.goto('/mongodb/users');
-  await page.getByRole('link', { name: ' Change Password' }).click();
+  // this spec's own user, other users may exist from earlier runs
+  await page.locator('a[href="/mongodb/password/stefan_mongo_user"]').click();
   await expect(page).toHaveURL(/mongodb\/password/);
+  // the generate button only works once the page's script has run
+  await page.waitForLoadState('load');
   await page.locator('#generatePassword').click();
   await page.getByRole('button', { name: 'Change Password' }).click();
   await expect(page).toHaveURL(/mongodb\/users/);

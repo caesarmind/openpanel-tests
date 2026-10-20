@@ -166,8 +166,9 @@ test('create user', async ({ page }) => {
 test('change password', async ({ page }) => {
   await page.goto('/mysql/users');
 
-  const firstRow = page.locator('#users-table tbody tr:visible').first();
-  const username = (await firstRow.locator('[data-sort-col="username"]').innerText()).trim();
+  // this spec's own user, the first row can be novi_user whose password the remote access test relies on
+  const username = 'stefan_user';
+  const firstRow = page.locator('#users-table tbody tr', { has: page.locator('[data-sort-col="username"]', { hasText: new RegExp(`^\\s*${username}\\s*$`) }) });
 
   await firstRow.getByRole('link', { name: 'Change Password' }).click();
   await expect(page).toHaveURL(/.*mysql\/password/);
