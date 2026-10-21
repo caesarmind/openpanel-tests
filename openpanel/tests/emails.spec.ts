@@ -129,8 +129,10 @@ test('create emails and verify dashboard count', async ({ page }) => {
     await createEmail(page, username);
     await expectEmailInTable(page, username);
     expected++;
-    await page.goto('/dashboard');
-    await expect.poll(() => getEmailCount(page), { timeout: 10000 }).toBe(expected);
+    await expect.poll(async () => {
+      await page.goto('/dashboard');
+      return getEmailCount(page);
+    }, { timeout: 15000 }).toBe(expected);
   }
 });
 
@@ -1021,8 +1023,10 @@ test('delete emails and verify dashboard count', async ({ page }) => {
     await expectEmailNotInTable(page, username);
     expected--;
 
-    await page.goto('/dashboard');
-    await expect.poll(() => getEmailCount(page), { timeout: 10000 }).toBe(expected);
+    await expect.poll(async () => {
+      await page.goto('/dashboard');
+      return getEmailCount(page);
+    }, { timeout: 15000 }).toBe(expected);
   }
 });
 

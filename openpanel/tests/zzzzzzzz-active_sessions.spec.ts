@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('active sessions: search, activity logs, terminate session', async ({ page, request }) => {
+test('active sessions: search, activity logs, terminate session', async ({ page, request, browser }) => {
 
   const ipResponse = await request.get('https://ip.openpanel.com/');
   const ip = (await ipResponse.text()).trim();
@@ -57,16 +57,28 @@ test('active sessions: search, activity logs, terminate session', async ({ page,
   await expect(page).toHaveURL(/\/account\/sessions/);
 
 
-  const targetRow = table.locator('tbody tr', { hasText: ip }).first();
+  // terminate a throwaway login, not the shared session this project (or the other menu project) runs on
+  const tokensBefore = await table.locator('tbody form').evaluateAll(forms => forms.map(f => f.getAttribute('action')));
+  const extra = await browser.newContext({ ignoreHTTPSErrors: true });
+  const extraPage = await extra.newPage();
+  await extraPage.goto(`${process.env.BASE_URL}/login`);
+  await extraPage.getByRole('textbox', { name: 'Username' }).fill(process.env.PANEL_USERNAME!);
+  await extraPage.getByRole('textbox', { name: 'Password' }).fill(process.env.PANEL_PASSWORD!);
+  await extraPage.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await expect(extraPage).toHaveURL(/.*dashboard/);
 
-  const terminateButton = targetRow.getByRole('button', {
-    name: /terminate/i,
-  });
-
-  await terminateButton.click();
-
+  await page.reload();
+  const tokensAfter = await table.locator('tbody form').evaluateAll(forms => forms.map(f => f.getAttribute('action')));
+  const newTokens = tokensAfter.filter(t => !tokensBefore.includes(t));
+  expect(newTokens).toHaveLength(1);
+  await table.locator(`form[action="${newTokens[0]}"]`).getByRole('button', { name: /terminate/i }).click();
 
   await expect(
     page.getByText('Session terminated successfully.')
   ).toBeVisible();
+
+  // the throwaway login is logged out now
+  await extraPage.goto(`${process.env.BASE_URL}/dashboard`);
+  await expect(extraPage).toHaveURL(/.*login/);
+  await extra.close();
 });

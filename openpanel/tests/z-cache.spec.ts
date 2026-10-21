@@ -219,12 +219,13 @@ for (const service of services) {
     console.log(`${service.name} starts successfully`);
 
     // TEST CONNECTION
-    await page.goto(`/file-manager/edit-file/${domain}/cache_connection_test.php?editor=text&new=true`); 
+    // one file per service, opcache can keep running the previous service's script from a reused file
+    await page.goto(`/file-manager/edit-file/${domain}/cache_connection_test_${service.name}.php?editor=text&new=true`);
     await page.locator('#editor-text').fill(connectionPhpScripts[service.name]);
     await page.getByRole('button', { name: 'Save' }).click();
     // wait for the save, otherwise the page below can still run the previous service's script
     await expect(page.getByText(/saved|success/i).first()).toBeVisible();
-    const testUrl = `https://${domain}/cache_connection_test.php?nocache=${Math.floor(Math.random() * 100_000)}`;
+    const testUrl = `https://${domain}/cache_connection_test_${service.name}.php?nocache=${Math.floor(Math.random() * 100_000)}`;
     // apache resolves php-fpm per request and a lookup can miss while podman's dns reloads after a container change
     let body: string | null = '';
     for (let i = 0; i < 6; i++) {
