@@ -88,17 +88,19 @@ test.describe.serial('wp-admin tests', () => {
 test('wp-admin - install scrollchart plugin', async ({ page }) => {
   test.setTimeout(3 * 60 * 1000);
 
-  await page.goto(`${WP_ADMIN.url}/plugin-install.php`, { waitUntil: 'domcontentloaded' });
-
-  await page.fill('#search-plugins', 'Scrollchart');
-  await page.keyboard.press('Enter');
-
   const scrollchartCard = page
     .locator('.plugin-card')
     .filter({ hasText: 'Scrollchart' })
     .first();
 
-  await expect(scrollchartCard).toBeVisible({ timeout: 60000 });
+  // right after the core upgrade wp-admin can hang or show maintenance for a bit, so reload the search
+  await expect(async () => {
+    await page.goto(`${WP_ADMIN.url}/plugin-install.php?s=Scrollchart&tab=search&type=term`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    });
+    await expect(scrollchartCard).toBeVisible({ timeout: 20000 });
+  }).toPass({ timeout: 150000 });
 
   const installButton = scrollchartCard.locator('.install-now');
 
@@ -125,13 +127,15 @@ test('wp-admin - install scrollchart plugin', async ({ page }) => {
 test('wp-admin - install nexusslash theme', async ({ page }) => {
   test.setTimeout(3 * 60 * 1000);
 
-  await page.goto(`${WP_ADMIN.url}/theme-install.php?search=nexusslash`, {
-    waitUntil: 'networkidle',
-  });
-
   const nexusslashTheme = page.locator('.theme[data-slug="nexusslash"]').first();
 
-  await expect(nexusslashTheme).toBeVisible({ timeout: 60000 });
+  // the search goes out to api.wordpress.org and sometimes comes back empty, so reload it
+  await expect(async () => {
+    await page.goto(`${WP_ADMIN.url}/theme-install.php?search=nexusslash`, {
+      waitUntil: 'networkidle',
+    });
+    await expect(nexusslashTheme).toBeVisible({ timeout: 20000 });
+  }).toPass({ timeout: 120000 });
   await expect(nexusslashTheme.locator('.theme-name')).toHaveText(/NexusSlash/i);
 
   const installButton = nexusslashTheme.locator(

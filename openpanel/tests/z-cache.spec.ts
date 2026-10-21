@@ -223,8 +223,14 @@ for (const service of services) {
     await page.locator('#editor-text').fill(connectionPhpScripts[service.name]);
     await page.getByRole('button', { name: 'Save' }).click();
     const testUrl = `https://${domain}/cache_connection_test.php?nocache=${Math.floor(Math.random() * 100_000)}`;
-    await page.goto(testUrl);
-    const body = await page.locator('body').textContent();
+    // apache resolves php-fpm per request and a lookup can miss while podman's dns reloads after a container change
+    let body: string | null = '';
+    for (let i = 0; i < 6; i++) {
+      await page.goto(testUrl);
+      body = await page.locator('body').textContent();
+      if (!body?.includes('Proxy Error')) break;
+      await page.waitForTimeout(5000);
+    }
     const expectedOk = `${service.name.toUpperCase()}_OK`;
     await expect(body?.trim().includes(expectedOk), `Expected "${expectedOk}" in response but got: ${body}`).toBe(true);
     console.log(`${service.name} connection test from php passed`);
