@@ -517,7 +517,8 @@ test('edit php options', async ({ page }) => {
   await postMaxSizeContainer.locator('select.unit-part').selectOption('G');
   
   await page.click('#save-changes-button');
-  await expect(page.getByText(/Configuration edited successfully and PHP-FPM service restarted/i)).toBeVisible();
+  // the panel reloads php-fpm when it can and only restarts it as a fallback
+  await expect(page.getByText(/Configuration edited successfully and PHP-FPM (reloaded|service restarted)/i)).toBeVisible();
 
   await expect(maxExecTime).toHaveValue('600');
   await expect(disableFuncs).toHaveValue('passthru,system');
