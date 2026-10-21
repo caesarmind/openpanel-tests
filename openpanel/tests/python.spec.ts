@@ -188,9 +188,14 @@ test.describe('Python autoinstaller', () => {
   test('5. stop, start and restart app', async ({ page }) => {
     test.setTimeout(4 * 60 * 1000);
 
+    // a stopped app makes the proxy hang for a while before 503, so a timeout counts as down
     const siteUp = async () => {
-      const res = await page.request.get(`https://${DOMAIN}/`, { failOnStatusCode: false });
-      return res.status() === 200 && (await res.text()).includes('Hello World');
+      try {
+        const res = await page.request.get(`https://${DOMAIN}/`, { failOnStatusCode: false, timeout: 10000 });
+        return res.status() === 200 && (await res.text()).includes('Hello World');
+      } catch {
+        return false;
+      }
     };
 
     await page.goto(`/website?domain=${DOMAIN}`);
