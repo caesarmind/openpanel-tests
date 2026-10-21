@@ -9,6 +9,11 @@ export async function openSiteTab(page: Page, name: string) {
     return;
   }
   const label = (await tab.textContent())!.trim();
-  await page.locator('.tab-overflow-btn').click();
-  await page.locator('.tab-overflow-item', { hasText: label }).click();
+  const item = page.locator('.tab-overflow-item', { hasText: label });
+  // the menu can close again right after opening, so reopen until the item shows
+  await expect(async () => {
+    if (!(await item.isVisible())) await page.locator('.tab-overflow-btn').click();
+    await expect(item).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 30000 });
+  await item.click();
 }
