@@ -474,7 +474,8 @@ test('webmail autologin and send/receive', async ({ page }) => {
 
   // --- Click compose ---
   await popup.locator('a.compose, button.compose').first().click();
-  await popup.waitForSelector('#compose-subject', { timeout: 10_000 });
+  // roundcube's first compose load can be slow
+  await popup.waitForSelector('#compose-subject', { timeout: 30_000 });
 
   // --- Fill To via the visible token widget input ---
   const toInput = popup.locator('.token-input input, #compose-to .token-input, #compose_to .recipient input').first();

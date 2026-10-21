@@ -29,14 +29,19 @@ async function openDomainPage(page: Page, domain: string) {
 // WAF config is applied asynchronously (reload of the web server / modsec),
 // so poll the status instead of asserting once right after the change.
 async function statusOf(page: Page, url: string) {
-  return (await page.request.get(url, { failOnStatusCode: false })).status();
+  // the web server restarts to apply the change, a reset connection just means poll again
+  try {
+    return (await page.request.get(url, { failOnStatusCode: false, timeout: 10_000 })).status();
+  } catch {
+    return 0;
+  }
 }
 
 async function expectBlocked(page: Page, url: string) {
   await expect
     .poll(async () => BLOCKED_STATUSES.includes(await statusOf(page, url)), {
       message: `expected ${url} to be blocked`,
-      timeout: 15_000,
+      timeout: 30_000,
     })
     .toBe(true);
 }
@@ -45,7 +50,7 @@ async function expectAllowed(page: Page, url: string) {
   await expect
     .poll(() => statusOf(page, url), {
       message: `expected ${url} to be allowed`,
-      timeout: 15_000,
+      timeout: 30_000,
     })
     .toBe(200);
 }

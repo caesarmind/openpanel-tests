@@ -17,9 +17,20 @@ test.describe('PrestaShop autoinstaller', () => {
     await page.locator('#admin_email').fill(ADMIN_EMAIL);
     // admin_firstname, admin_lastname, admin_password and db_* fields are pre-filled by the page's own JS
 
+    // keep the install stream so a failure shows the installer's own error instead of a 13 minute timeout
+    let stream = '';
+    page.on('response', async res => {
+      if (res.url().includes('/prestashop/install') && res.request().method() === 'POST') {
+        stream = await res.text().catch(() => '');
+      }
+    });
+
     await page.locator('#installButton').click();
 
-    await expect(page.getByText(/installation completed/i)).toBeVisible({ timeout: 13 * 60 * 1000 });
+    const outcome = page.getByText(/installation completed|install process failed/i).first();
+    await expect(outcome).toBeVisible({ timeout: 13 * 60 * 1000 });
+    const text = (await outcome.textContent()) ?? '';
+    expect(text, `install failed, stream:\n${stream}`).toMatch(/installation completed/i);
   });
 
   test('2. verify app appears on /sites', async ({ page }) => {
