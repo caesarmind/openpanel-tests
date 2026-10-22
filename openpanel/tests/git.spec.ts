@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ensureDomain, withProjectPage } from '../helpers';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, withProjectPage } from '../helpers';
 
 // repos deploy to their own folders, not the docroot, so it shares a domain with other specs
 const DOMAIN = 'shared.tests.openpanel.org';
@@ -226,6 +226,24 @@ test('search repositories', async ({ page }) => {
   await search.fill('');
   await expect(repoRow(page, LOCAL_REPO)).toBeVisible();
   console.log('git search is working');
+});
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(3 * 60_000);
+  await page.goto('/git');
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, [LOCAL_REPO, REMOTE_REPO], '#git-table tbody tr');
+  await bulkRun(page, 'mode', 'manual');
+  for (const name of [LOCAL_REPO, REMOTE_REPO]) await expect(repoRow(page, name)).toContainText('Manual');
+
+  await bulkSelect(page, [LOCAL_REPO, REMOTE_REPO], '#git-table tbody tr');
+  await bulkRun(page, 'deploy');
+
+  // local repositories can't pull, so only the remote one runs
+  await bulkSelect(page, [LOCAL_REPO, REMOTE_REPO], '#git-table tbody tr');
+  const pulled = await bulkRun(page, 'pull');
+  expect(pulled.map(r => r.item)).toEqual([REMOTE_REPO]);
 });
 
 test('remove repositories', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ensureDomains } from '../helpers';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -991,25 +991,12 @@ test('default address — set and clear catch-all', async ({ page }) => {
     await expect(destinationInput).toHaveValue(destination);
   }
 
-  // Clear catch-all.
+  // Clear catch-all, the Remove button is there once a rule exists, the save above may still be reloading the page
+  await page.goto(`/emails/default/${encodeURIComponent(domain)}`);
   const deleteButton = page.locator('#delete-btn');
-
-  if (await deleteButton.isVisible().catch(() => false)) {
-    page.once('dialog', async dialog => {
-      await dialog.accept();
-    });
-
-    await deleteButton.click();
-  } else {
-    /*
-     * On the HTML shown, clearing is done by saving an empty destination.
-     */
-    await destinationInput.click();
-    await destinationInput.press('ControlOrMeta+A');
-    await destinationInput.press('Delete');
-    await expect(destinationInput).toHaveValue('');
-    await saveButton.click();
-  }
+  await expect(deleteButton).toBeVisible();
+  page.once('dialog', dialog => dialog.accept());
+  await deleteButton.click();
 
   await expect(
     page.getByText(/no catch-all configured/i)
@@ -1046,4 +1033,61 @@ test('delete email page shows selector when no address given', async ({ page }) 
   await page.goto('/emails/delete');
   await expect(page.getByRole('heading', { name: /select email/i })).toBeVisible();
   await expect(page.locator('select#domains')).toBeVisible();
+});
+
+
+test('bulk actions on email accounts', async ({ page }) => {
+  test.setTimeout(4 * 60_000);
+  const users = ['bulkmaila', 'bulkmailb'];
+  for (const user of users) {
+    await page.goto('/emails');
+    if (await page.locator('#email-accounts').getByText(new RegExp(`${user}@`)).count()) continue;
+    await createEmail(page, user);
+  }
+  const names = users.map(u => `${u}@`);
+
+  await page.goto('/emails');
+  await bulkSelectAllAndClear(page);
+
+  for (const value of ['suspend_in', 'suspend_out', 'unsuspend_in', 'unsuspend_out']) {
+    await bulkSelect(page, names, '#email-accounts tbody tr');
+    await bulkRun(page, 'suspension', value);
+  }
+
+  await bulkSelect(page, names, '#email-accounts tbody tr');
+  await bulkRun(page, 'quota', '1');
+
+  await bulkSelect(page, names, '#email-accounts tbody tr');
+  await bulkRun(page, 'password', 'BulkPassw0rd_94');
+
+  await bulkSelect(page, names, '#email-accounts tbody tr');
+  await bulkRun(page, 'delete');
+  for (const user of users) await expect(page.locator('#email-accounts').getByText(new RegExp(`${user}@`))).toHaveCount(0);
+});
+
+test('bulk actions on aliases', async ({ page }) => {
+  const sources = ['pw-bulk-alias-a', 'pw-bulk-alias-b'].map(a => `${a}@${DOMAIN}`);
+  for (const source of sources) {
+    await page.goto('/emails/aliases');
+    if (await page.getByText(source, { exact: true }).count()) continue;
+    await page.goto('/emails/aliases/new');
+    await page.getByLabel('Domain').selectOption(DOMAIN);
+    await page.getByLabel(/alias address/i).fill(source.split('@')[0]);
+    await page.getByLabel(/destination address/i).fill(TEST_TARGET);
+    await page.getByRole('button', { name: /create alias/i }).click();
+    await expect(page).toHaveURL(/\/emails\/aliases\/?$/, { timeout: 10_000 });
+  }
+
+  await page.goto('/emails/aliases');
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, sources, '#aliases-table tbody tr');
+  await bulkRun(page, 'add_target', 'second-target@external-test.example.com');
+  for (const source of sources) {
+    await expect(page.locator('#aliases-table tbody tr', { hasText: source })).toContainText('second-target@external-test.example.com');
+  }
+
+  await bulkSelect(page, sources, '#aliases-table tbody tr');
+  await bulkRun(page, 'delete');
+  for (const source of sources) await expect(page.getByText(source, { exact: true })).toHaveCount(0);
 });

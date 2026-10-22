@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { ensureDomains } from '../../helpers';
+import { bulkRun, bulkSelectAllAndClear, bulkSelectKeys, ensureDomains } from '../../helpers';
 
 // the webserver page check needs at least one domain on the account
 test.beforeAll(async ({ browser }, testInfo) => {
@@ -132,6 +132,9 @@ test('edit cpu, ram and toggle container state for all rows', async ({ page }) =
     // cron (ofelia) restart-loops on an account with no cron jobs, so a live limit change can hit it mid-restart
     const service = (await row.locator('form[action^="/containers/cpu/"]').getAttribute('action'))?.split('/').pop();
     if (service === 'cron') continue;
+    // restart-loops on kernel 6.19+, so the panel can't change it, https://github.com/stefanpejcic/OpenPanel/issues/1205
+    if (service === 'mongodb') continue;
+    console.log(`editing container ${service}`);
 
     // 1. EDIT CPU
     const cpuBefore = await setLimit(page, row, 'cpu', '1');
@@ -188,6 +191,17 @@ test('add new service form loads', async ({ page }) => {
 });
 
 test('add new service - invalid name shows error', async ({ page }) => {
+  // an earlier run leaves testapp behind for the delete confirm test, and a taken name keeps the form disabled
+  await page.goto('/containers');
+  if (await page.locator('#containers-table tbody input.bulk-select-box[value="testapp"]').count()) {
+    await page.goto('/containers/delete/testapp');
+    await page.getByRole('button', { name: /Delete Service/i }).click();
+    await expect.poll(async () => {
+      await page.goto('/containers');
+      return page.locator('#containers-table tbody input.bulk-select-box[value="testapp"]').count();
+    }, { timeout: 60_000, intervals: [3000] }).toBe(0);
+  }
+
   await page.goto('/containers/new');
 
   const image = page.locator('#image');
@@ -548,4 +562,41 @@ test('containers status endpoint returns JSON', async ({ page }) => {
   const body = await response.json();
   expect(body).toHaveProperty('running_containers');
   expect(Array.isArray(body.running_containers)).toBe(true);
+});
+
+// ─────────────────────────────────────────────
+// /containers  (bulk actions, only on containers made for it)
+// ─────────────────────────────────────────────
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(8 * 60_000);
+  const services = ['bulkappa', 'bulkappb'];
+  const rows = '#containers-table tbody tr';
+  const box = (service: string) => page.locator(`${rows} input.bulk-select-box[value="${service}"]`);
+
+  for (const service of services) {
+    await page.goto('/containers');
+    if (await box(service).count()) continue;
+    await page.goto('/containers/new');
+    await page.locator('#image').fill('nginx:latest');
+    await page.locator('#service_name').fill(service);
+    await page.locator('#cpu').fill('0.5');
+    await page.locator('#ram_amount').fill('1');
+    await page.locator('main button[type="submit"]').click();
+    await expect.poll(async () => { await page.goto('/containers'); return box(service).count(); }, { timeout: 120_000, intervals: [3000] }).toBe(1);
+  }
+
+  await page.goto('/containers');
+  await bulkSelectAllAndClear(page);
+
+  for (const [action, value] of [['start'], ['restart'], ['stop'], ['cpu', '0.25'], ['ram', '0.5'], ['pids', '50']] as [string, string?][]) {
+    await page.goto('/containers');
+    await bulkSelectKeys(page, services);
+    await bulkRun(page, action, value);
+  }
+
+  await page.goto('/containers');
+  await bulkSelectKeys(page, services);
+  await bulkRun(page, 'delete');
+  for (const service of services) await expect(box(service)).toHaveCount(0);
 });

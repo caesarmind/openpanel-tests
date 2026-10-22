@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear } from '../helpers';
 
 // after the config test restarts postgres the page shows an "initializing" row and refreshes itself until it's back
 async function waitForPostgres(page: any) {
@@ -48,6 +49,8 @@ test('list databases', async ({ page }) => {
 
 
 test('create database', async ({ page }) => {
+  // the first page load waits for a fresh account's PostgreSQL to start
+  test.setTimeout(3 * 60_000);
   await deleteRowIfExists(page, '/postgresql', 'stefan_psql');
   await navigateToPostgreSQLPage(page);
   await page.getByRole('link', { name: 'New Database' }).click();
@@ -291,4 +294,61 @@ test('delete database', async ({ page }) => {
   await deleteRowIfExists(page, '/postgresql', 'psql_proba');
 
   console.log('postgresql database deleted');
+});
+
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(5 * 60_000);
+  const dbs = ['pgbulka', 'pgbulkb'];
+  const users = ['pgbulkua', 'pgbulkub'];
+  const row = (name: string) => page.locator('tr').filter({ has: page.getByText(name, { exact: true }) });
+
+  for (const db of dbs) {
+    await deleteRowIfExists(page, '/postgresql', db);
+    await navigateToPostgreSQLPage(page);
+    await page.getByRole('link', { name: 'New Database' }).click();
+    await page.getByRole('textbox', { name: 'Database Name' }).fill(db);
+    await page.getByRole('button', { name: 'Create Database' }).click();
+    await expect(page.locator('body')).toContainText(/successfully created/i, { timeout: 25000 });
+  }
+  for (const user of users) {
+    await deleteRowIfExists(page, '/postgresql/users', user);
+    await page.goto('/postgresql/user');
+    await page.getByRole('textbox', { name: 'Username*' }).fill(user);
+    await page.getByRole('textbox', { name: 'Password*' }).fill('stefan94bulk');
+    await page.getByRole('button', { name: 'Create User' }).click();
+    await expect(page.locator('body')).toContainText(new RegExp(`successfully created.*${user}`, 'i'));
+  }
+
+  // databases page
+  await navigateToPostgreSQLPage(page);
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, dbs, '#databases-table tbody tr');
+  await bulkRun(page, 'assign', users[0]);
+  await waitForPostgres(page);
+  for (const db of dbs) await expect(row(db)).toContainText(users[0]);
+
+  await bulkSelect(page, dbs, '#databases-table tbody tr');
+  await bulkRun(page, 'unassign', users[0]);
+  await waitForPostgres(page);
+  for (const db of dbs) await expect(row(db)).not.toContainText(users[0]);
+
+  await bulkSelect(page, dbs, '#databases-table tbody tr');
+  await bulkRun(page, 'export', '/var/www/html/');
+
+  await bulkSelect(page, dbs, '#databases-table tbody tr');
+  await bulkRun(page, 'delete');
+  await waitForPostgres(page);
+  for (const db of dbs) await expect(row(db)).toHaveCount(0);
+
+  // users page
+  await page.goto('/postgresql/users');
+  await waitForPostgres(page);
+  await bulkSelect(page, users, '#users-table tbody tr');
+  await bulkRun(page, 'password', 'N3wBulkPass94');
+
+  await bulkSelect(page, users, '#users-table tbody tr');
+  await bulkRun(page, 'delete');
+  for (const user of users) await expect(row(user)).toHaveCount(0);
 });

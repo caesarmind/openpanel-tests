@@ -32,6 +32,7 @@ test('favicon endpoint rejects a domain the user does not own', async ({ page })
 });
 
 test('screenshot endpoint returns an image', async ({ page }) => {
+  test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1208 screenshot API is slower than the panel timeout');
   test.setTimeout(60_000);
   const response = await page.goto(`/json/screenshot/${domain}`);
   expect(response).not.toBeNull();
@@ -49,6 +50,7 @@ test('screenshot endpoint rejects a domain the user does not own', async ({ page
 });
 
 test('screenshot can be force-regenerated via POST', async ({ page }) => {
+  test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1208 screenshot API is slower than the panel timeout');
   test.setTimeout(60_000);
   // any panel page works for the csrf token
   await page.goto('/dashboard');

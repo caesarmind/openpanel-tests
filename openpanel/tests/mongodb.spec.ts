@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear } from '../helpers';
+
+// known bug, remove once fixed
+test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1205 MongoDB 8.0 does not start on kernel 6.19+');
 
 async function navigateToMongoDBPage(page: any) {
   await page.goto('/mongodb');
@@ -187,4 +191,46 @@ test('delete database', async ({ page }) => {
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
   await expectDatabaseNotInTable(page, dbName);
   console.log('mongodb database deleted');
+});
+
+
+// written while MongoDB can't start on this server (#1205), so not run yet, same flow as the PostgreSQL one
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(5 * 60_000);
+  const dbs = ['mongobulka', 'mongobulkb'];
+  const users = ['mongobulkua', 'mongobulkub'];
+
+  for (const db of dbs) {
+    await navigateToMongoDBPage(page);
+    if (await page.locator('#databases-table tbody tr', { hasText: db }).count()) continue;
+    await page.getByRole('link', { name: 'New Database' }).click();
+    await page.getByRole('textbox', { name: 'Database Name' }).fill(db);
+    await page.getByRole('button', { name: 'Create Database' }).click();
+    await expect(page.locator('body')).toContainText(/successfully created/i, { timeout: 25000 });
+  }
+  for (const user of users) {
+    await page.goto('/mongodb/users');
+    if (await page.locator('#users-table tbody tr', { hasText: user }).count()) continue;
+    await page.goto('/mongodb/user');
+    await page.getByRole('textbox', { name: 'Username' }).fill(user);
+    await page.getByRole('textbox', { name: 'Password' }).fill('stefan94bulk');
+    await page.getByRole('button', { name: 'Create User' }).click();
+    await expect(page.locator('body')).toContainText(new RegExp(`successfully created.*${user}`, 'i'));
+  }
+
+  await navigateToMongoDBPage(page);
+  await bulkSelectAllAndClear(page);
+  for (const [action, value] of [['assign', users[0]], ['unassign', users[0]], ['export', '/var/www/html/'], ['delete']] as [string, string?][]) {
+    await navigateToMongoDBPage(page);
+    await bulkSelect(page, dbs, '#databases-table tbody tr');
+    await bulkRun(page, action, value);
+  }
+  for (const db of dbs) await expectDatabaseNotInTable(page, db);
+
+  for (const [action, value] of [['password', 'N3wBulkPass94'], ['delete']] as [string, string?][]) {
+    await page.goto('/mongodb/users');
+    await bulkSelect(page, users, '#users-table tbody tr');
+    await bulkRun(page, action, value);
+  }
+  for (const user of users) await expect(page.locator('#users-table tbody tr', { hasText: user })).toHaveCount(0);
 });

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear } from '../helpers';
 
 // These tests intentionally share a cron job. Run in order, in one worker.
 test.describe.configure({ mode: 'serial' });
@@ -180,4 +181,41 @@ test('delete job', async ({ page }) => {
   await expect(page.getByText('Cron job was successfully deleted.')).toBeVisible();
   await jobList(page);
   await expect(jobRow(page, UPDATED_JOB)).toHaveCount(0);
+});
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(3 * 60_000);
+  const jobs = [`bulk a ${RUN}`, `bulk b ${RUN}`];
+
+  for (const name of jobs) {
+    await page.goto('/cronjobs/new');
+    await page.locator('#container').selectOption('php-fpm-8.5');
+    await page.getByRole('radio', { name: /custom/i }).check();
+    await page.locator('#schedule').fill('0 0 3 * * *');
+    await page.locator('#command').fill('echo bulk');
+    await page.locator('#comment').fill(name);
+    await page.getByRole('button', { name: /schedule cronjob/i }).click();
+    await expect(page.getByText('Cron job created and saved successfully!')).toBeVisible();
+  }
+
+  const status = (name: string) => jobRow(page, name).locator('[data-sort-col="status"]');
+
+  await jobTable(page);
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, jobs);
+  await bulkRun(page, 'disable');
+  for (const name of jobs) await expect(status(name)).toHaveAttribute('data-sort-value', '0');
+
+  await bulkSelect(page, jobs);
+  await bulkRun(page, 'enable');
+  for (const name of jobs) await expect(status(name)).toHaveAttribute('data-sort-value', '1');
+
+  await bulkSelect(page, jobs);
+  await bulkRun(page, 'schedule', '0 30 4 * * *');
+  for (const name of jobs) await expect(jobRow(page, name).locator('[data-sort-col="schedule"]')).toHaveText('0 30 4 * * *');
+
+  await bulkSelect(page, jobs);
+  await bulkRun(page, 'delete');
+  for (const name of jobs) await expect(jobRow(page, name)).toHaveCount(0);
 });

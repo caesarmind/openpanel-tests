@@ -122,6 +122,90 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
   }
 }
 
+// bulk actions bar (templates/partials/_bulk.html + static/js/bulk-actions.js), shared by every page that has row checkboxes
+
+// ticks the row checkbox of each row that contains one of the names
+export async function bulkSelect(page: Page, names: string[], rows = 'tbody tr') {
+  for (const name of names) {
+    const box = page.locator(rows, { hasText: name }).locator('input.bulk-select-box');
+    await expect(box, `bulk checkbox for ${name}`).toHaveCount(1);
+    await box.check();
+  }
+  await expect(page.locator('#bulk-actions-bar')).toBeVisible();
+}
+
+// same, by the row key the page puts in the checkbox value, for rows whose text isn't unique (sessions from one IP, ids)
+export async function bulkSelectKeys(page: Page, keys: string[]) {
+  for (const key of keys) {
+    const box = page.locator(`tbody input.bulk-select-box[value="${key}"]`);
+    await expect(box, `bulk checkbox for ${key}`).toHaveCount(1);
+    await box.check();
+  }
+  await expect(page.locator('#bulk-actions-bar')).toBeVisible();
+}
+
+// select all shows the bar with every visible row counted, Clear hides it again
+export async function bulkSelectAllAndClear(page: Page) {
+  const bar = page.locator('#bulk-actions-bar');
+  const boxes = page.locator('tbody input.bulk-select-box:visible');
+  const count = await boxes.count();
+  expect(count, 'rows with a bulk checkbox').toBeGreaterThan(0);
+  await page.getByRole('checkbox', { name: 'Select all' }).first().check();
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText(`${count} selected`);
+  await bar.getByRole('button', { name: 'Clear' }).click();
+  await expect(bar).toBeHidden();
+  await expect(page.locator('tbody input.bulk-select-box:checked')).toHaveCount(0);
+}
+
+// clicks confirm and returns the bulk reply, the page reloads as soon as it lands so it's read on the way through, a plain waitForResponse loses the body
+export async function bulkReply(page: Page, action: string, confirm: () => Promise<void>): Promise<any[]> {
+  let status = 0;
+  let body: any;
+  let replied!: () => void;
+  const reply = new Promise<void>(resolve => { replied = resolve; });
+  const handler = async (route: any) => {
+    const req = route.request();
+    if (req.method() !== 'POST' || !(req.postData() ?? '').includes(`"action":"${action}"`)) return route.fallback();
+    const response = await route.fetch({ timeout: 120_000 });
+    status = response.status();
+    body = await response.json().catch(() => ({}));
+    await route.fulfill({ response, json: body });
+    replied();
+  };
+  await page.route('**/*', handler);
+  const reloaded = page.waitForEvent('load', { timeout: 120_000 });
+  await confirm();
+  await reply;
+  await page.unroute('**/*', handler);
+  expect(status, `bulk ${action}: ${JSON.stringify(body)}`).toBe(200);
+  expect(Array.isArray(body?.results), `bulk ${action} reply has results: ${JSON.stringify(body)}`).toBe(true);
+  const failed = body.results.filter((r: any) => !r.ok);
+  expect(failed, `bulk ${action} failed for some items`).toEqual([]);
+  await reloaded;
+  return body.results;
+}
+
+// runs a bulk action on the ticked rows, fails unless every item succeeded, the page reloads with the summary after
+// value can pick from a select's options when they depend on the server, e.g. the installed PHP versions
+export async function bulkRun(page: Page, action: string, value?: string | ((options: string[]) => string)): Promise<{ item: string; ok: boolean; message: string }[]> {
+  const bar = page.locator('#bulk-actions-bar');
+  await bar.locator(`[data-bulk-action="${action}"]`).click();
+  if (value !== undefined) {
+    const input = bar.locator(`[data-bulk-input="${action}"]`);
+    await expect(input).toBeVisible();
+    if ((await input.evaluate(el => el.tagName)) === 'SELECT') {
+      const options = await input.locator('option').evaluateAll(opts => opts.map(o => (o as HTMLOptionElement).value).filter(Boolean));
+      await input.selectOption(typeof value === 'function' ? value(options) : value);
+    } else {
+      await input.fill(typeof value === 'function' ? value([]) : value);
+    }
+  }
+  const results = await bulkReply(page, action, () => bar.locator('button[type="submit"]').click());
+  await expect(page.getByText(/completed successfully for all \d+ selected item/i).first()).toBeVisible();
+  return results;
+}
+
 // a new domain gets its certificate in the background, visiting it over http kicks that off
 export async function waitForCert(page: Page, domain: string, timeout = 3 * 60_000) {
   test.info().setTimeout(test.info().timeout + timeout);

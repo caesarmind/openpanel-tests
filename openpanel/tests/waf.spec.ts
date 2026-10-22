@@ -1,5 +1,5 @@
 import { test, expect, Page, Locator } from '@playwright/test';
-import { ensureDomains } from '../helpers';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
 
 // own domain, the firewall blocks requests other specs would make to a shared one
 const DOMAIN = 'waf.tests.openpanel.org';
@@ -184,4 +184,33 @@ test('waf logs show blocked requests for domain', async ({ page }) => {
 
   await searchInput.fill('');
   await expect(rows).toHaveCount(rowCount);
+});
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(2 * 60_000);
+  const rows = '#waf-domains-table tbody tr';
+
+  await page.goto('/server/waf');
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, [DOMAIN], rows);
+  await bulkRun(page, 'set_level', 'strict');
+
+  await bulkSelect(page, [DOMAIN], rows);
+  await bulkRun(page, 'apply_profile', 'wordpress');
+
+  await bulkSelect(page, [DOMAIN], rows);
+  await bulkRun(page, 'apply_profile', 'none');
+
+  await bulkSelect(page, [DOMAIN], rows);
+  await bulkRun(page, 'disable');
+  await expect(wafToggle(page, DOMAIN)).toHaveAttribute('aria-checked', 'false');
+
+  await bulkSelect(page, [DOMAIN], rows);
+  await bulkRun(page, 'enable');
+  await expect(wafToggle(page, DOMAIN)).toHaveAttribute('aria-checked', 'true');
+
+  // back to the default level for the next run
+  await bulkSelect(page, [DOMAIN], rows);
+  await bulkRun(page, 'set_level', 'standard');
 });

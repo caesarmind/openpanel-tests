@@ -1,4 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Browser } from '@playwright/test';
+import { bulkRun, bulkSelectKeys } from '../helpers';
+
+// a separate login whose token we know, so a terminate never hits the session the specs run on
+async function throwawayLogin(browser: Browser) {
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await context.newPage();
+  await page.goto(`${process.env.BASE_URL}/login`);
+  await page.getByRole('textbox', { name: 'Username' }).fill(process.env.PANEL_USERNAME!);
+  await page.getByRole('textbox', { name: 'Password' }).fill(process.env.PANEL_PASSWORD!);
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await expect(page).toHaveURL(/.*dashboard/);
+  await page.goto(`${process.env.BASE_URL}/account/sessions`);
+  const action = await page.locator('#sessions-table tbody tr', { hasText: 'This session' }).locator('form').getAttribute('action');
+  return { context, page, token: action!.split('/').pop()! };
+}
 
 test('active sessions: search, activity logs, terminate session', async ({ page, request, browser }) => {
 
@@ -83,4 +98,19 @@ test('active sessions: search, activity logs, terminate session', async ({ page,
   await extraPage.goto(`${process.env.BASE_URL}/dashboard`);
   await expect(extraPage).toHaveURL(/.*login/);
   await extra.close();
+});
+
+
+test('bulk terminate sessions', async ({ page, browser }) => {
+  const logins = [await throwawayLogin(browser), await throwawayLogin(browser)];
+
+  await page.goto('/account/sessions');
+  await bulkSelectKeys(page, logins.map(l => l.token));
+  await bulkRun(page, 'terminate');
+
+  for (const login of logins) {
+    await login.page.goto(`${process.env.BASE_URL}/dashboard`);
+    await expect(login.page).toHaveURL(/.*login/);
+    await login.context.close();
+  }
 });

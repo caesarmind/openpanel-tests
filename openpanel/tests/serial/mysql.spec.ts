@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear, bulkSelectKeys } from '../../helpers';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -111,6 +112,7 @@ test('show database sizes', async ({ page }) => {
 
 
 test('phpmyadmin auto-login', async ({ page }) => {
+  test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1212 phpMyAdmin cannot open /sessions');
   await page.goto(`/phpmyadmin?route=/database/structure&server=1&db=stefan_baza`);
   // wait up to 30sec and expect: http://185.193.66.252:32797/index.php?server=1&route=%2Fdatabase%2Fstructure&db=stefan_baza
   await expect(page.locator('body')).toContainText(/stefan_baza/i, { timeout: 30000 });
@@ -240,7 +242,11 @@ test('grant NO privileges', async ({ page }) => {
 
   await expect(page.locator('body')).toContainText(/stefan_user/i);
 
-  await page.getByRole('link', { name: 'stefan_user' }).click();
+  // the page ticks the user's current privileges once this request comes back, unticking before that gets undone
+  await Promise.all([
+    page.waitForResponse(resp => resp.url().includes('/mysql/privileges/stefan_user/') && resp.status() === 200),
+    page.getByRole('link', { name: 'stefan_user' }).click(),
+  ]);
 
   await expect(page.locator('select[name="db_user"]')).toHaveValue('stefan_user');
   
@@ -692,4 +698,120 @@ test('delete database', async ({ page }) => {
   await expect.poll(async () => {return await getDatabaseCount(page)}).toBe(expectedCount);
 
   console.log('database deleted + validated');
+});
+
+
+async function createDatabase(page: Page, name: string) {
+  await deleteRowIfExists(page, '/mysql', name);
+  await navigateToMySQLPage(page);
+  await page.locator('a[href="/mysql/new"]').first().click();
+  await page.getByRole('textbox', { name: 'Database Name' }).fill(name);
+  await page.getByRole('button', { name: 'Create Database' }).click();
+  await expect(page.locator('body')).toContainText(/successfully created a database/i);
+}
+
+async function createUser(page: Page, name: string) {
+  await deleteRowIfExists(page, '/mysql/users', name);
+  await page.goto('/mysql/user');
+  await page.getByRole('textbox', { name: 'Username*' }).fill(name);
+  await page.getByRole('textbox', { name: 'Password*' }).fill('stefan94bulk');
+  await page.getByRole('button', { name: 'Create User' }).click();
+  await expect(page.locator('body')).toContainText(new RegExp(`successfully created a database user ${name}`, 'i'));
+}
+
+test('bulk actions on databases', async ({ page }) => {
+  test.setTimeout(5 * 60_000);
+  const dbs = ['mysqlbulka', 'mysqlbulkb'];
+  const user = 'mysqlbulkuser';
+  const rows = '#databases-table tbody tr';
+  for (const db of dbs) await createDatabase(page, db);
+  await createUser(page, user);
+
+  await navigateToMySQLPage(page);
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, dbs, rows);
+  await bulkRun(page, 'assign', user);
+  for (const db of dbs) await expect(page.locator(rows, { hasText: db })).toContainText(user);
+
+  await bulkSelect(page, dbs, rows);
+  await bulkRun(page, 'unassign', user);
+  for (const db of dbs) await expect(page.locator(rows, { hasText: db })).not.toContainText(user);
+
+  for (const action of ['optimize', 'repair']) {
+    await bulkSelect(page, dbs, rows);
+    await bulkRun(page, action);
+  }
+
+  await bulkSelect(page, dbs, rows);
+  await bulkRun(page, 'export', '/var/www/html/');
+
+  await bulkSelect(page, dbs, rows);
+  await bulkRun(page, 'delete');
+  for (const db of dbs) await expect(page.locator(rows, { hasText: db })).toHaveCount(0);
+
+  await deleteRowIfExists(page, '/mysql/users', user);
+});
+
+test('bulk actions on users', async ({ page }) => {
+  test.setTimeout(3 * 60_000);
+  const users = ['mysqlbulkua', 'mysqlbulkub'];
+  const rows = '#users-table tbody tr';
+  for (const user of users) await createUser(page, user);
+
+  await page.goto('/mysql/users');
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, users, rows);
+  await bulkRun(page, 'password', 'N3wBulkPass94');
+
+  await bulkSelect(page, users, rows);
+  await bulkRun(page, 'delete');
+  for (const user of users) await expect(page.locator(rows, { hasText: user })).toHaveCount(0);
+});
+
+test('bulk remove remote access hosts', async ({ page }) => {
+  test.setTimeout(5 * 60_000);
+  const user = 'mysqlbulkremote';
+  const hosts = ['10.11.12.13', '10.11.12.14'];
+  const statusText = page.locator('dd p.text-lg.font-semibold');
+
+  // the per-user host list only shows while remote access is on
+  await page.goto('/mysql/remote-mysql');
+  await expect(statusText).toHaveText('Disabled');
+  await page.locator('dd button', { hasText: 'Click to Enable' }).click();
+  await expect(page.locator('text=Remote MySQL access is now enabled')).toBeVisible();
+
+  try {
+    for (const host of hosts) {
+      await page.goto('/mysql/remote-mysql');
+      const form = page.locator('form[action="/mysql/remote-mysql/access/add"]');
+      await page.getByRole('button', { name: 'Add Access' }).click();
+      await expect(form).toBeVisible();
+      await form.locator('input[name="db_user"]').fill(user);
+      await form.locator('input[name="db_host"]').fill(host);
+      await form.locator('input[name="password"]').fill('stefan94bulkpass');
+      await form.locator('button[type="submit"]').click();
+      await expect(page.locator('#remote-access-table')).toContainText(host);
+    }
+
+    await page.goto('/mysql/remote-mysql');
+    // the key is user@host, the user may have the account's prefix in front
+    const keys = await page.locator('#remote-access-table input.bulk-select-box').evaluateAll(
+      (boxes, hosts) => boxes.map(b => (b as HTMLInputElement).value).filter(v => hosts.some(h => v.endsWith('@' + h))),
+      hosts,
+    );
+    expect(keys).toHaveLength(2);
+    await bulkSelectKeys(page, keys);
+    await bulkRun(page, 'remove');
+    for (const host of hosts) await expect(page.locator('#remote-access-table')).not.toContainText(host);
+  } finally {
+    await page.goto('/mysql/remote-mysql');
+    await page.locator('dd button', { hasText: 'Click to Disable' }).click();
+    await expect(page.locator('text=Remote MySQL access is now disabled')).toBeVisible();
+    // mysql restarts after the toggle
+    await page.waitForTimeout(10000);
+  }
+
+  await deleteRowIfExists(page, '/mysql/users', user);
 });

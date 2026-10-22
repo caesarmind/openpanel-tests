@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomBytes } from 'crypto';
 import dns from 'dns';
-import { addDomain, hasDomain, waitForCert, withLock } from '../../helpers';
+import { addDomain, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, hasDomain, waitForCert, withLock } from '../../helpers';
 
 // only this spec's own domains, every other spec adds the domain it needs itself
 const DOMAIN = 'domains.tests.openpanel.org';
@@ -248,6 +248,8 @@ test('change docroot', async ({ page }) => {
 // USED BY DNS EDITOR CHECKS
 const domain = DOMAIN;
 const recordValue = `verify-${process.env.TEST_RUN_ID || randomBytes(6).toString('hex')}`;
+// per run, a reset that failed in an earlier run leaves the old record behind
+const ZONE_EDITOR_TXT = `added via zone editor ${recordValue}`;
 
 // ask the panel's own nameserver directly instead of going through a third-party dig website
 async function txtRecords(name: string): Promise<string> {
@@ -364,7 +366,7 @@ test('edit zone file', async ({ page }) => {
   await page.goto(`/domains/edit-dns-zone/${domain}?view=code`);
 
   // 1. append TXT record
-  const newRecord = `\n${domain}.    14400     IN      TXT       "added via zone editor"`;
+  const newRecord = `\n${domain}.    14400     IN      TXT       "${ZONE_EDITOR_TXT}"`;
   const zoneTextArea = page.locator('textarea[name="zone_content"]');
   const existingContent = await zoneTextArea.inputValue();
   await zoneTextArea.fill(existingContent + newRecord);
@@ -373,13 +375,13 @@ test('edit zone file', async ({ page }) => {
 
   // 2. validate in table view
   await page.goto(`/domains/edit-dns-zone/${domain}`);
-  const newRow = page.locator('tr.domain_row', { hasText: `added via zone editor` });
+  const newRow = page.locator('tr.domain_row', { hasText: ZONE_EDITOR_TXT });
   await expect(newRow).toBeVisible();
   await expect(newRow.locator('td').nth(3)).toHaveText('TXT');
-  await expect(newRow.locator('td').nth(4)).toContainText(`added via zone editor`);
+  await expect(newRow.locator('td').nth(4)).toContainText(ZONE_EDITOR_TXT);
 
   // 3. validate against the nameserver
-  await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).toContain(`added via zone editor`);
+  await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).toContain(ZONE_EDITOR_TXT);
   console.log('dns file editor mode is working');
 });
 
@@ -406,8 +408,14 @@ test('reset dns zone', async ({ page }) => {
   await expect(newRow.locator('td').nth(4)).toContainText(tmprecordValue);
 
   // 3. restart
-  await page.locator('#dropdownHoverButton').click();
-  await page.locator('#dropdownHover').locator('a:has-text("Reset")').click();
+  // adding the record reloads the page, a click before its scripts start doesn't open the menu
+  await page.waitForLoadState('load');
+  const resetLink = page.locator('#dropdownHover').locator('a:has-text("Reset")');
+  await expect(async () => {
+    if (!(await resetLink.isVisible())) await page.locator('#dropdownHoverButton').click();
+    await expect(resetLink).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
+  await resetLink.click();
   const resetBtn = page.getByRole('button', { name: 'Reset Zone', exact: true });
   await expect(resetBtn).toBeVisible();
   await resetBtn.click();
@@ -417,7 +425,7 @@ test('reset dns zone', async ({ page }) => {
   await expect(successMsg).toBeVisible();
   await expect(newRow).not.toBeVisible();
   await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).not.toContain(tmprecordValue);
-  await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).not.toContain('added via zone editor');
+  await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).not.toContain(ZONE_EDITOR_TXT);
 
   console.log('dns zone restart is working');
 });
@@ -634,5 +642,88 @@ test('delete domain', async ({ page }) => {
     await page.goto('/dashboard');
     const finalCount = await getDomainCount(page);
     expect(finalCount).toBe(initialCount - 1);
+  });
+});
+
+
+test('bulk actions on dns records', async ({ page }) => {
+  test.setTimeout(3 * 60_000);
+  const values = [`bulk-a-${randomBytes(4).toString('hex')}`, `bulk-b-${randomBytes(4).toString('hex')}`];
+  const rows = '#filemanager_table tbody tr.domain_row';
+  await ensureDomain(page, domain);
+
+  for (const value of values) {
+    await page.goto(`/domains/edit-dns-zone/${domain}`);
+    await page.locator('#AddDNSRecord').click();
+    const addRow = page.locator('#addRecordRow');
+    await expect(addRow).toBeVisible();
+    await addRow.locator('input[name="Name"]').fill(domain);
+    await addRow.locator('select[name="Type"]').selectOption('TXT');
+    await addRow.locator('input[name="Record"]').fill(value);
+    await page.locator('#save-row').click();
+    await expect(page.getByText(/DNS record added successfully/i)).toBeVisible();
+  }
+
+  await page.goto(`/domains/edit-dns-zone/${domain}`);
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, values, rows);
+  await bulkRun(page, 'ttl', '3600');
+  for (const value of values) await expect(page.locator(rows, { hasText: value }).locator('td').nth(2)).toHaveText('3600');
+
+  await bulkSelect(page, values, rows);
+  await bulkRun(page, 'delete');
+  for (const value of values) await expect(page.locator(rows, { hasText: value })).toHaveCount(0);
+  for (const value of values) await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).not.toContain(value);
+});
+
+
+test('bulk actions on domains', async ({ page }) => {
+  test.setTimeout(10 * 60_000);
+  const targets = [DOMAIN, 'redirect.tests.openpanel.org'];
+  const temporary = ['bulk-delete-a.com', 'bulk-delete-b.com'];
+  const rows = '#domains-table tbody tr';
+  const row = (name: string) => page.locator(rows).filter({ has: page.locator(`td[data-sort-value="${name}"]`) });
+  for (const name of targets) await ensureDomain(page, name);
+
+  await page.goto('/domains');
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'suspend');
+  for (const name of targets) await expect(row(name)).toContainText('Suspended');
+
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'unsuspend');
+  for (const name of targets) await expect(row(name)).not.toContainText('Suspended');
+
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'redirect', 'https://pejcic.rs/?bulk');
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'unredirect');
+
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'waf', 'Off');
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'waf', 'On');
+
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'cloudflare', 'enable');
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'cloudflare', 'disable');
+
+  // any installed version, then back to the one first in the list
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'php', options => options[options.length - 1]);
+  await bulkSelect(page, targets, rows);
+  await bulkRun(page, 'php', options => options[0]);
+
+  // deleting is tried on domains made for it
+  await withLock('domains', async () => {
+    for (const name of temporary) if (!(await hasDomain(page, name))) await addDomain(page, name);
+    await page.goto('/domains');
+    await bulkSelect(page, temporary, rows);
+    await bulkRun(page, 'delete');
+    for (const name of temporary) await expect(row(name)).toHaveCount(0);
   });
 });

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { bulkRun, bulkSelect, bulkSelectAllAndClear } = require('../helpers');
 
 
   test('Left-click to add', async ({ page }) => {
@@ -139,4 +140,24 @@ const { test, expect } = require('@playwright/test');
       const isFavorite = await starBtn.getAttribute('data-is-favorite');
       expect(isFavorite === null || isFavorite === "false").toBe(true);
 
+  });
+
+  test('bulk delete', async ({ page }) => {
+      const links = ['/files', '/domains'];
+      for (const link of links) {
+          await page.goto(link);
+          const starBtn = page.locator('#addFavoriteBtn');
+          await expect(starBtn).toBeVisible();
+          if ((await starBtn.getAttribute('data-is-favorite')) !== 'true') {
+              await starBtn.click();
+              await expect(page.locator('text=Successfully added to favorites')).toBeVisible({ timeout: 5000 });
+          }
+      }
+
+      await page.goto('/account/favorites');
+      await bulkSelectAllAndClear(page);
+      const names = ['File Manager', 'Domains'];
+      await bulkSelect(page, names, '#favorites-table tbody tr');
+      await bulkRun(page, 'delete');
+      for (const name of names) await expect(page.locator('#favorites-table tbody tr', { hasText: name })).toHaveCount(0);
   });

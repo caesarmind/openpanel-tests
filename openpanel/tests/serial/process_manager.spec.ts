@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { bulkRun, bulkSelectAllAndClear, bulkSelectKeys } from '../../helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -153,6 +154,24 @@ test.describe('Process Manager', () => {
             .count();
 
         expect(totalVisible).toBeGreaterThan(visibleCount);
+    });
+
+
+    test('bulk kill php-fpm pool workers', async ({ page }) => {
+        await page.goto('/process-manager');
+        await page.waitForLoadState('networkidle');
+        await bulkSelectAllAndClear(page);
+
+        // pool workers are safe to kill, the php-fpm master starts new ones
+        const workers = page.locator('tbody tr[x-show]')
+            .filter({ has: page.locator('td[data-sort-col="container"]', { hasText: /php-fpm/ }) })
+            .filter({ has: page.locator('td[data-sort-col="cmd"]', { hasText: /pool/ }) });
+        const keys = (await workers.locator('input.bulk-select-box').evaluateAll(boxes => boxes.map(b => (b as HTMLInputElement).value))).slice(0, 2);
+        test.skip(keys.length === 0, 'no php-fpm pool workers running');
+
+        await bulkSelectKeys(page, keys);
+        await bulkRun(page, 'kill');
+        for (const key of keys) await expect(page.locator(`tbody input.bulk-select-box[value="${key}"]`)).toHaveCount(0);
     });
 
 });

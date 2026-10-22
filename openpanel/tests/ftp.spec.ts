@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as ftp from 'basic-ftp';
 import { Readable, Writable } from 'stream';
-import { ensureDomains } from '../helpers';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
 
 // npm install basic-ftp
 
@@ -310,4 +310,40 @@ test('account delete', async ({ page }) => {
   // 4. check count again
   await page.goto('/dashboard');
   await expect.poll(async () => {return await getFTPCount(page);}).toBe(expectedCount);
+});
+
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(3 * 60_000);
+  const accounts = ['bulka', 'bulkb'].map(u => `${u}@${FTP_DOMAIN}`);
+  const row = (account: string) => page.locator('tbody tr').filter({ hasText: account });
+
+  for (const account of accounts) {
+    await page.goto('/ftp/new');
+    await page.locator('#new_ftp_username').fill(account.split('@')[0]);
+    await page.locator('#domain').selectOption({ label: FTP_DOMAIN });
+    await page.locator('#password').fill(FTP_PASS);
+    await page.locator('#new_user_path').fill(FTP_PATH);
+    await page.getByRole('button', { name: /Create Account/i }).click();
+    await expect(page.getByText(/created successfully/i)).toBeVisible();
+  }
+
+  await page.goto('/ftp');
+  await bulkSelectAllAndClear(page);
+
+  await bulkSelect(page, accounts);
+  await bulkRun(page, 'quota', '500M');
+  for (const account of accounts) await expect(row(account).locator('[data-sort-col="quota"]')).toHaveAttribute('data-sort-value', '500');
+
+  await bulkSelect(page, accounts);
+  await bulkRun(page, 'quota_remove');
+  for (const account of accounts) await expect(row(account).locator('[data-sort-col="quota"]')).not.toHaveAttribute('data-sort-value', '500');
+
+  await bulkSelect(page, accounts);
+  await bulkRun(page, 'path', '/var/www/html/');
+  for (const account of accounts) await expect(row(account)).not.toContainText(FTP_PATH);
+
+  await bulkSelect(page, accounts);
+  await bulkRun(page, 'delete');
+  for (const account of accounts) await expect(row(account)).toHaveCount(0);
 });

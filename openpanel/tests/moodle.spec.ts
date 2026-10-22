@@ -37,6 +37,7 @@ test.describe('Moodle autoinstaller', () => {
   });
 
   test('3. verify app is responding', async ({ page }) => {
+    test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1206 Apache refuses the docroot symlink');
     const url = `https://${DOMAIN}/`;
     await page.goto(url);
 

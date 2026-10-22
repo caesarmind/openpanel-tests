@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { ensureDomain, withProjectPage } from '../../helpers';
+import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, withProjectPage } from '../../helpers';
 
 // own domain, the version tests switch its php back and forth
 const domain = 'php.tests.openpanel.org';
@@ -370,4 +370,25 @@ test.describe('version change', () => {
       console.log(`ioncube is enabled on php ${versionShort}`);
     });
   }
+});
+
+test('bulk actions', async ({ page }) => {
+  test.setTimeout(5 * 60_000);
+  const rows = '#php-domains-table tbody tr';
+  await ensureDomain(page, domain);
+  const versionOf = async () => (await page.locator(rows, { hasText: domain }).locator('td').nth(2).textContent())?.match(/\d+\.\d+/)?.[0];
+
+  await page.goto('/php/domains');
+  await bulkSelectAllAndClear(page);
+  const before = await versionOf();
+
+  // any other installed version, then reset to the default
+  let picked = '';
+  await bulkSelect(page, [domain], rows);
+  await bulkRun(page, 'version', options => (picked = options.find(o => !o.includes(before ?? '-')) ?? options[0]));
+  await expect.poll(versionOf).toBe(picked.match(/\d+\.\d+/)?.[0]);
+
+  await bulkSelect(page, [domain], rows);
+  await bulkRun(page, 'default');
+  await expect.poll(versionOf).toBe(before);
 });
