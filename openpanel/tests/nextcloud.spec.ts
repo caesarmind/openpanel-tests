@@ -2,8 +2,6 @@ import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
 import { ensureDomains, runInstaller } from '../helpers';
 
-// known bug, remove once fixed
-test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1207 install fails when the generated password starts with -');
 
 const DOMAIN = 'nextcloud.tests.openpanel.org';
 
