@@ -112,7 +112,6 @@ test('show database sizes', async ({ page }) => {
 
 
 test('phpmyadmin auto-login', async ({ page }) => {
-  test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1212 phpMyAdmin cannot open /sessions');
   await page.goto(`/phpmyadmin?route=/database/structure&server=1&db=stefan_baza`);
   // wait up to 30sec and expect: http://185.193.66.252:32797/index.php?server=1&route=%2Fdatabase%2Fstructure&db=stefan_baza
   await expect(page.locator('body')).toContainText(/stefan_baza/i, { timeout: 30000 });
