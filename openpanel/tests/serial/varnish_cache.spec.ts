@@ -1,6 +1,24 @@
 import { test, expect, type Page } from '@playwright/test';
+import { ensureDomains, withProjectPage } from '../../helpers';
 
-const DOMAIN = 'wp.tests.openpanel.org';
+const DOMAIN = 'shared.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
+// a failure halfway would leave varnish in front of every site of the account
+test.afterAll(async ({ browser }, testInfo) => {
+  testInfo.setTimeout(2 * 60_000);
+  await withProjectPage(browser, testInfo, async page => {
+    await page.goto('/cache/varnish');
+    const status = page.locator('#service-page-status');
+    if ((await status.textContent())?.trim() !== 'Disabled') {
+      await page.getByRole('button', { name: 'Click to Disable' }).click();
+      await expect(status).toHaveText('Disabled', { timeout: 40_000 });
+    }
+  });
+});
 
 // toggling varnish recreates caddy/webserver, so 443 refuses connections for a few seconds right after
 async function varnishHeaders(page: Page, path: string): Promise<boolean | null> {

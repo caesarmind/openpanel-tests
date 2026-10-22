@@ -1,37 +1,36 @@
 import { test as setup, expect } from '@playwright/test';
-import path from 'path';
-
-export const AUTH_FILE = path.join(__dirname, '../.auth/session.json');
-// same login with the modern menu (menu_style cookie), used by the tests-modern project
-export const AUTH_FILE_MODERN = path.join(__dirname, '../.auth/session-modern.json');
-
-const BASE_URL = process.env.BASE_URL;
-const USERNAME = process.env.PANEL_USERNAME;
-const PASSWORD = process.env.PANEL_PASSWORD;
+import { AUTH_FILE, AUTH_FILE_MODERN, SUITE_DOMAINS, addDomain, hasDomain, saveLogin, withLock } from './helpers';
 
 // one login per menu style, so a spec that logs out or ends sessions in one project can't log out the other
-setup('authenticate', async ({ browser }) => {
-  if (!BASE_URL || !USERNAME || !PASSWORD) {
+setup('authenticate', async ({ browser }, testInfo) => {
+  if (!process.env.BASE_URL || !process.env.PANEL_USERNAME || !process.env.PANEL_PASSWORD) {
     throw new Error('BASE_URL, USERNAME and PASSWORD must be set in .env');
   }
 
-  for (const [style, file] of [['classic', AUTH_FILE], ['modern', AUTH_FILE_MODERN]] as const) {
-    const context = await browser.newContext({ ignoreHTTPSErrors: true });
-    // pin the menu style, so the admin's default menu_style can't change what a project tests
-    await context.addCookies([{ name: 'menu_style', value: style, url: BASE_URL }]);
-    const page = await context.newPage();
-    await page.goto(`${BASE_URL}/login`);
-    await page.getByRole('textbox', { name: 'Username' }).fill(USERNAME);
-    await page.getByRole('textbox', { name: 'Password' }).fill(PASSWORD);
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-    await expect(page).toHaveURL(/.*dashboard/);
-    // a fresh account gets the setup wizard and tour over the dashboard, which blocks clicks in every spec
-    await page.evaluate(async () => {
-      const headers = { 'X-CSRF-Token': (window as any).csrf_token || '' };
-      await fetch('/dashboard/onboarding/complete', { method: 'POST', headers });
-      await fetch('/dashboard/tour/complete', { method: 'POST', headers });
+  // setup logs in for tests + serial (modern), setup-classic for tests-classic + serial-classic
+  const style = testInfo.project.metadata.menuStyle === 'classic' ? 'classic' : 'modern';
+  const file = style === 'classic' ? AUTH_FILE : AUTH_FILE_MODERN;
+  await saveLogin(browser, style, file);
+
+  // all domains up front, an add during the parallel run would restart services under other specs (see SUITE_DOMAINS)
+  setup.setTimeout(30 * 60_000);
+  const context = await browser.newContext({ ...testInfo.project.use, storageState: file } as any);
+  const page = await context.newPage();
+  let added = false;
+  for (const domain of SUITE_DOMAINS) {
+    await withLock('domains', async () => {
+      if (await hasDomain(page, domain)) return;
+      await addDomain(page, domain);
+      added = true;
     });
-    await context.storageState({ path: file });
-    await context.close();
   }
+  // php-fpm and the mailserver are recreated in the background after an add, let them come back first
+  if (added) {
+    await expect.poll(async () => {
+      const res = await page.request.get(`https://${SUITE_DOMAINS[0]}/`, { failOnStatusCode: false, timeout: 10_000 }).catch(() => null);
+      return res ? res.status() < 500 : false;
+    }, { timeout: 3 * 60_000, intervals: [5000] }).toBe(true);
+    await page.waitForTimeout(15_000);
+  }
+  await context.close();
 });

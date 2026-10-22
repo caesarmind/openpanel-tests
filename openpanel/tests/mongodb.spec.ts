@@ -28,6 +28,8 @@ test('list databases', async ({ page }) => {
 
 
 test('create database', async ({ page }) => {
+  // waits up to 120s below for a fresh account's MongoDB to start
+  test.setTimeout(3 * 60_000);
   // a fresh account's MongoDB was only just started by the list test, the form sends us back until it answers
   await expect(async () => {
     await navigateToMongoDBPage(page);

@@ -1,4 +1,23 @@
 import { test, expect, Page } from '@playwright/test';
+import { ensureDomains, withProjectPage } from '../../helpers';
+
+const DOMAIN = 'shared.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
+// a failure halfway would leave the runner's IP blocked from every site of the account
+test.afterAll(async ({ browser }, testInfo) => {
+  await withProjectPage(browser, testInfo, async page => {
+    await page.goto('/security/ip-blocker');
+    if ((await page.locator('#blocked_ips').inputValue()).trim()) {
+      await page.locator('#blocked_ips').clear();
+      await page.click('#save-ips');
+      await expect(page.getByText('All IP addresses have been successfully removed from blocklist and can now access websites')).toBeVisible();
+    }
+  });
+});
 
 test('IP Blocker', async ({ page, context }) => {
 
@@ -19,7 +38,7 @@ test('IP Blocker', async ({ page, context }) => {
     await test.step('Verify website is blocked', async () => {
         await expect.poll(async () => {
             try {
-                const response = await page.goto('https://wp.tests.openpanel.org', { timeout: 2000 });
+                const response = await page.goto(`https://${DOMAIN}`, { timeout: 2000 });
                 return response?.status();
             } catch (e) {
                 return 'blocked'; // Playwright throws if navigation is aborted/blocked
@@ -41,7 +60,7 @@ test('IP Blocker', async ({ page, context }) => {
     await page.waitForTimeout(2000);
     await test.step('Verify website is accessible', async () => {
         await expect.poll(async () => {
-            const response = await page.goto('https://wp.tests.openpanel.org');
+            const response = await page.goto(`https://${DOMAIN}`);
             return response?.status();
         }, {
             message: 'Website should be accessible',

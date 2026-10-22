@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains } from '../helpers';
 
 const DOMAIN = 'n8n.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const APP_NAME = 'n8naplikacija';
 const OWNER_EMAIL = `admin@${DOMAIN}`;
 const OWNER_PASSWORD = 'Op3nP4nel_t3st!';

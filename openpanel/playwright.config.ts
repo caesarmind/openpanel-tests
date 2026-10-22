@@ -13,6 +13,14 @@ if (!BASE_URL) {
   throw new Error('BASE_URL must be set in .env');
 }
 
+const SESSION = '.auth/session.json';
+const SESSION_MODERN = '.auth/session-modern.json';
+
+// Spec files are independent of each other and run in parallel (--workers=N), tests inside a file stay in order.
+// tests/serial/ holds specs that change something account-wide (stop all containers, block the runner's IP,
+// restart the webserver or MySQL, end every session, switch the UI language, enable 2FA...), which would break
+// whatever runs next to them. They run one at a time as the setup's teardown, so after the parallel tests,
+// even when some of those failed.
 export default defineConfig({
   testDir: '.',
 
@@ -22,29 +30,62 @@ export default defineConfig({
     acceptDownloads: true,
   },
 
+  // menuStyle pins the menu_style cookie at login (auth.setup.ts), isModern() reads it
   projects: [
+    // modern menu (menu_style=modern), the default
     {
       name: 'setup',
       testMatch: /auth\.setup\.ts/,
+      teardown: 'serial',
+      metadata: { menuStyle: 'modern' },
     },
-    // classic menu (menu_style=classic), kept for legacy
     {
       name: 'tests',
       testDir: './tests',
       testMatch: /.*\.spec\.ts/,
+      testIgnore: /[\\/]serial[\\/]/,
       dependencies: ['setup'],
+      metadata: { menuStyle: 'modern' },
       use: {
-        storageState: '.auth/session.json',
+        storageState: SESSION_MODERN,
       },
     },
-    // modern menu (menu_style=modern): same specs, menu-dependent steps branch on isModern()
     {
-      name: 'tests-modern',
+      name: 'serial',
+      testDir: './tests/serial',
+      testMatch: /.*\.spec\.ts/,
+      workers: 1,
+      metadata: { menuStyle: 'modern' },
+      use: {
+        storageState: SESSION_MODERN,
+      },
+    },
+    // classic menu (menu_style=classic), kept for legacy: same specs, menu-dependent steps branch on isModern()
+    {
+      name: 'setup-classic',
+      testMatch: /auth\.setup\.ts/,
+      teardown: 'serial-classic',
+      metadata: { menuStyle: 'classic' },
+    },
+    {
+      name: 'tests-classic',
       testDir: './tests',
       testMatch: /.*\.spec\.ts/,
-      dependencies: ['setup'],
+      testIgnore: /[\\/]serial[\\/]/,
+      dependencies: ['setup-classic'],
+      metadata: { menuStyle: 'classic' },
       use: {
-        storageState: '.auth/session-modern.json',
+        storageState: SESSION,
+      },
+    },
+    {
+      name: 'serial-classic',
+      testDir: './tests/serial',
+      testMatch: /.*\.spec\.ts/,
+      workers: 1,
+      metadata: { menuStyle: 'classic' },
+      use: {
+        storageState: SESSION,
       },
     },
   ],

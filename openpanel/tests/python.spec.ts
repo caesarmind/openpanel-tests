@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains } from '../helpers';
 
 // https://github.com/stefanpejcic/python-helloworld
 
 const DOMAIN = 'python.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const APP_NAME = 'pythonaplikacija';
 const PORT = '5000';
 const STARTUP_FILE = `/var/www/html/${DOMAIN}/app.py`;
@@ -159,6 +165,8 @@ test.describe('Python autoinstaller', () => {
   });
 
   test('4. verify app is responding', async ({ page }) => {
+    // polls the site for up to 90s below
+    test.setTimeout(3 * 60 * 1000);
     const expected = `Hello World from Flask on port ${PORT}!`;
     const url = `https://${DOMAIN}/`;
 

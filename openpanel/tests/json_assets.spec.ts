@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test';
+import { ensureDomains } from '../helpers';
 
 // Covers modules/json/favicons.py (/json/favicon/<domain>) and
 // modules/json/screenshots.py (/json/screenshot/<domain>) — both used as embedded
 // image sources on the domains list and website manager pages.
 
-const domain = 'wp.tests.openpanel.org';
+// read-only use, so it shares a domain with other specs that only look at it
+const domain = 'shared.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, domain);
+});
 
 test('favicon endpoint redirects to a favicon image', async ({ page }) => {
   const response = await page.goto(`/json/favicon/${domain}`);
@@ -44,7 +50,7 @@ test('screenshot endpoint rejects a domain the user does not own', async ({ page
 
 test('screenshot can be force-regenerated via POST', async ({ page }) => {
   test.setTimeout(60_000);
-  // any panel page works for the csrf token, /website 404s once the wordpress spec has removed the site
+  // any panel page works for the csrf token
   await page.goto('/dashboard');
 
   const status = await page.evaluate(async (d) => {

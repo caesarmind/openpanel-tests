@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { ensureDomains } from '../helpers';
 
 const domain = 'website-builder.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, domain);
+});
 
 // detach keeps the site files and the installer refuses to run over an existing index.html
 async function removeIndexHtml(page) {

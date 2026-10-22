@@ -23,7 +23,7 @@ echo
 
 # INCREASE LIMITS SO TESTS DONT GET BLOCKED
 opencli config update login_ratelimit 100
-opencli plan-edit id=2 name="Developer plus" description="A professional plan" emails=500 max_email_quota=2G ftp=100 domains=25 websites=25 disk=50 inodes=1000000 databases=40 cpu=4 ram=6 bandwidth=500 max_hourly_email=6000
+opencli plan-edit id=2 name="Developer plus" description="A professional plan" emails=500 max_email_quota=2G ftp=100 domains=40 websites=40 disk=50 inodes=1000000 databases=40 cpu=4 ram=6 bandwidth=500 max_hourly_email=6000
 # ENABLE ALL FEATURES
 for f in basic.txt default.txt; do
   # DOCKER:

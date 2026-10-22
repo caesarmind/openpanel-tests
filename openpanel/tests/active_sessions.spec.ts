@@ -58,7 +58,6 @@ test('active sessions: search, activity logs, terminate session', async ({ page,
 
 
   // terminate a throwaway login, not the shared session this project (or the other menu project) runs on
-  const tokensBefore = await table.locator('tbody form').evaluateAll(forms => forms.map(f => f.getAttribute('action')));
   const extra = await browser.newContext({ ignoreHTTPSErrors: true });
   const extraPage = await extra.newPage();
   await extraPage.goto(`${process.env.BASE_URL}/login`);
@@ -67,11 +66,14 @@ test('active sessions: search, activity logs, terminate session', async ({ page,
   await extraPage.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(extraPage).toHaveURL(/.*dashboard/);
 
+  // other workers log in too, so take the token from the row the throwaway login sees as its own
+  await extraPage.goto(`${process.env.BASE_URL}/account/sessions`);
+  const throwawayAction = await extraPage.locator('#sessions-table tbody tr', { hasText: 'This session' })
+    .locator('form').getAttribute('action');
+  expect(throwawayAction).toBeTruthy();
+
   await page.reload();
-  const tokensAfter = await table.locator('tbody form').evaluateAll(forms => forms.map(f => f.getAttribute('action')));
-  const newTokens = tokensAfter.filter(t => !tokensBefore.includes(t));
-  expect(newTokens).toHaveLength(1);
-  await table.locator(`form[action="${newTokens[0]}"]`).getByRole('button', { name: /terminate/i }).click();
+  await table.locator(`form[action="${throwawayAction}"]`).getByRole('button', { name: /terminate/i }).click();
 
   await expect(
     page.getByText('Session terminated successfully.')

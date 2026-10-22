@@ -1,10 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
+import { ensureDomains } from '../helpers';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const DOMAIN = 'wp.tests.openpanel.org';
+// mail settings don't change what the site serves, so it shares a domain with other specs
+const DOMAIN = 'shared.tests.openpanel.org';
 const EMAILS = ['test1', 'test2'];
 const PASSWORD = 'Password123_';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -452,7 +458,7 @@ test('connect devices back button goes to /emails', async ({ page }) => {
 // ─── Webmail autologin ────────────────────────────────────────────────────────
 
 test('webmail autologin and send/receive', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(4 * 60_000);
 
   await page.goto('/emails');
   const webmailBtn = page.locator('table a[href*="/webmail/"]').first();
@@ -473,9 +479,13 @@ test('webmail autologin and send/receive', async ({ page }) => {
   await popup.waitForSelector('#mailboxlist', { timeout: 20_000 });
 
   // --- Click compose ---
-  await popup.locator('a.compose, button.compose').first().click();
-  // roundcube's first compose load can be slow
-  await popup.waitForSelector('#compose-subject', { timeout: 30_000 });
+  // roundcube's first compose load can be slow, more so while other workers keep the server busy, so click again until it opens
+  await expect(async () => {
+    if (!(await popup.locator('#compose-subject').isVisible())) {
+      await popup.locator('a.compose, button.compose').first().click();
+    }
+    await expect(popup.locator('#compose-subject')).toBeVisible({ timeout: 30_000 });
+  }).toPass({ timeout: 90_000 });
 
   // --- Fill To via the visible token widget input ---
   const toInput = popup.locator('.token-input input, #compose-to .token-input, #compose_to .recipient input').first();
@@ -513,7 +523,8 @@ test('webmail autologin and send/receive', async ({ page }) => {
   // --- Sent folder ---
   await popup.locator('#mailboxlist a[rel="sent"], #mailboxlist .sent a').first().click();
   await popup.waitForLoadState('networkidle');
-  await expect(popup.locator('#messagelist tbody tr')).toContainText(subject, { timeout: 10_000 });
+  // a new mailbox already holds a welcome message, so look for this one's row
+  await expect(popup.locator('#messagelist tbody tr').filter({ hasText: subject })).toBeVisible({ timeout: 10_000 });
   
   // --- Inbox ---
   await popup.locator('#mailboxlist a[rel="inbox"], #mailboxlist .inbox a').first().click();

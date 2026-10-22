@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains } from '../helpers';
 
 const DOMAIN = 'ruby.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const APP_NAME = 'rubyaplikacija';
 const PORT = '4567';
 const STARTUP_FILE = `/var/www/html/${DOMAIN}/app.rb`;

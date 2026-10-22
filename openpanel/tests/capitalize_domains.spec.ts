@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
-const domain = 'wp.tests.openpanel.org';
+import { ensureDomains } from '../helpers';
+
+// own domain, the capitalized name shows up wherever the panel lists it
+const domain = 'capitalize.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, domain);
+});
 
 test('capitalize domains page loads', async ({ page }) => {
   await page.goto(`/domains/capitalize/${domain}`);

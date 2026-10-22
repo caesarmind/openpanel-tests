@@ -3,8 +3,10 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { ensureDomain, withProjectPage } from '../helpers';
 
-const DOMAIN = 'wp.tests.openpanel.org';
+// repos deploy to their own folders, not the docroot, so it shares a domain with other specs
+const DOMAIN = 'shared.tests.openpanel.org';
 const LOCAL_REPO = 'pw-local';
 const LOCAL_DIR = '/var/www/html/pw-git-local';
 const REMOTE_REPO = 'pw-remote';
@@ -24,19 +26,19 @@ const repoRow = (page: Page, name: string) => page.locator(`tr#repo-${name}`);
 
 // a run that failed halfway leaves its repositories behind, which would make create fail next time
 test.beforeAll(async ({ browser }, testInfo) => {
-  // a plain browser.newPage() wouldn't get the project's login or baseURL
-  const ctx = await browser.newContext(testInfo.project.use as any);
-  const page = await ctx.newPage();
-  await page.goto('/git');
-  for (const name of [LOCAL_REPO, REMOTE_REPO]) {
-    if (await repoRow(page, name).count()) {
-      await page.evaluate(async (repo) => {
-        const body = new URLSearchParams({ action: 'delete', repo, csrf_token: (window as any).csrf_token });
-        await fetch('/git', { method: 'POST', body });
-      }, name);
+  testInfo.setTimeout(15 * 60_000);
+  await withProjectPage(browser, testInfo, async page => {
+    await ensureDomain(page, DOMAIN);
+    await page.goto('/git');
+    for (const name of [LOCAL_REPO, REMOTE_REPO]) {
+      if (await repoRow(page, name).count()) {
+        await page.evaluate(async (repo) => {
+          const body = new URLSearchParams({ action: 'delete', repo, csrf_token: (window as any).csrf_token });
+          await fetch('/git', { method: 'POST', body });
+        }, name);
+      }
     }
-  }
-  await ctx.close();
+  });
 });
 
 async function openAddForm(page: Page) {

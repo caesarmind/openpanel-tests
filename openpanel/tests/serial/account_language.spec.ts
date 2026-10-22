@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { withProjectPage } from '../../helpers';
 
 const localeMapping: Record<string, string> = {
     'ne': 'ne-np',
@@ -50,6 +51,15 @@ const localesToTest = [
     'sv',
     'en',
 ];
+
+// the last locale is en, but a failure halfway would leave the panel in another language for everything after
+test.afterAll(async ({ browser }, testInfo) => {
+    await withProjectPage(browser, testInfo, async page => {
+        await page.goto('/account/language');
+        await page.locator('button[type="submit"][name="locale"][value="en"]').click();
+        await expect(page.getByRole('heading', { name: 'Change Language', exact: true })).toBeVisible();
+    });
+});
 
 test.describe('Change and use locale', () => {
 

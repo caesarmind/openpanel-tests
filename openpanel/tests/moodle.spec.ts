@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains, runInstaller } from '../helpers';
 
 const DOMAIN = 'moodle.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const ADMIN_EMAIL = `admin@${DOMAIN}`;
 
 test.setTimeout(12 * 60 * 1000);
@@ -17,9 +23,7 @@ test.describe('Moodle autoinstaller', () => {
     await page.locator('#admin_email').fill(ADMIN_EMAIL);
     // admin_password and db_* fields are pre-filled by the page's own JS
 
-    await page.locator('#installButton').click();
-
-    await expect(page.getByText(/installation completed/i)).toBeVisible({ timeout: 10 * 60 * 1000 });
+    await runInstaller(page, 'moodle', 10 * 60 * 1000);
   });
 
   test('2. verify app appears on /sites', async ({ page }) => {

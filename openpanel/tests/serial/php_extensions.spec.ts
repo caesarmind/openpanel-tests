@@ -74,8 +74,16 @@ test('toggle an extension enable/disable', async ({ page }) => {
     button.click(),
   ]);
 
-  await expect(page.locator('tbody tr').first().locator('td').nth(2).locator('button')).toHaveText(expectedLabel);
+  const toggled = page.locator('tbody tr').first().locator('td').nth(2).locator('button');
+  await expect(toggled).toHaveText(expectedLabel);
   console.log(`extension toggle for PHP ${version} is working`);
+
+  // toggle back, so the extension is as the sites on this version expect it
+  await Promise.all([
+    page.waitForLoadState('load'),
+    toggled.click(),
+  ]);
+  await expect(page.locator('tbody tr').first().locator('td').nth(2).locator('button')).toHaveText(wasEnabled ? 'Disable' : 'Enable');
 });
 
 test('available extensions list loads in install modal', async ({ page }) => {

@@ -27,20 +27,36 @@ Playwright end-to-end tests for the OpenPanel (user) panel.
 cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --ui
 ```
 
-## Run headlessly (single worker)
+## Run headlessly (parallel)
 
 This is what `run-tests.sh` and cron use — no `--ui`, since there's no
-display available in cron. Always run this suite with a single worker;
-running it in parallel hammers the shared test server and causes
-contention-related failures that aren't real bugs.
+display available in cron. Spec files don't depend on each other, so they
+run in parallel; tests inside one file still run in order.
 
 ```bash
-cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --workers=1
+cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --workers=4
 ```
+
+- Adding a domain restarts the webserver and recreates php-fpm and the
+  mailserver, which kills app installs running at the same time. So the setup
+  step adds every domain the suite uses (`SUITE_DOMAINS` in `helpers.ts`)
+  before the parallel tests start. Each spec still calls `ensureDomains()` for
+  its own domain, so any spec can also run on its own, e.g.
+  `npx playwright test -c openpanel/playwright.config.ts --project=tests tests/wordpress.spec.ts`.
+  Domains are added one at a time (a lock in the OS temp dir).
+- Specs that change something for the whole account (add/delete domains,
+  stop all containers, block the runner's IP, restart the webserver or MySQL,
+  switch PHP versions, end every session, switch the UI language, enable 2FA...) live
+  in `tests/serial/`. They run one at a time after the parallel ones, as the
+  `serial` project (the setup project's teardown, so it runs even when some
+  parallel tests failed). Each one puts back what it changed.
+- `tests` uses the modern menu (the default). The classic menu is still there as
+  `--project=tests-classic`. Run one menu style at a time, both use the same
+  account and domains.
 
 ## Automated daily runs (cron)
 
-`run-tests.sh` runs the suite headlessly on a single worker, writes a
+`run-tests.sh` runs the suite headlessly (`WORKERS`, default 4), writes a
 results table into this README (below), and commits + pushes it so the
 latest run is visible on git without needing to log into the server.
 

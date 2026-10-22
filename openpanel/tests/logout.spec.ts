@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// the account settings and active sessions specs right before this one end the shared session, so log in here
+// logs in on its own and only ends that login, the shared session the other specs run on stays valid
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test('logout', async ({ page }) => {
@@ -10,8 +10,13 @@ test('logout', async ({ page }) => {
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(page).toHaveURL(/.*dashboard/);
 
-  await page.locator('#user-btn-info').click();
-  await page.getByRole('link', { name: 'Sign out' }).click();
+  // under load the menu's script can bind after the first click, so open it until the link shows
+  const signOut = page.getByRole('link', { name: 'Sign out' });
+  await expect(async () => {
+    if (!(await signOut.isVisible())) await page.locator('#user-btn-info').click();
+    await expect(signOut).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
+  await signOut.click();
   await expect(page).toHaveURL(/.*login/);
 
   // validate

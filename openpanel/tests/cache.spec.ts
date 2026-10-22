@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ensureDomains } from '../helpers';
 
 async function navigateToPage(page: any, service: string) {
   await page.goto(`/cache/${service}`);
@@ -29,7 +30,12 @@ const services = [
   },
 ];
 
-const domain = 'wp.tests.openpanel.org';
+// only adds its own test scripts to the docroot, so it shares a domain with other specs
+const domain = 'shared.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, domain);
+});
 
 // PHP connection test scripts per service
 const connectionPhpScripts: Record<string, string> = {

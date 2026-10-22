@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains } from '../helpers';
 
 const DOMAIN = 'java.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const APP_NAME = 'javaaplikacija';
 const PORT = '8080';
 const STARTUP_FILE = `/var/www/html/${DOMAIN}/App.java`;

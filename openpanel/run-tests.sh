@@ -1,14 +1,16 @@
 #!/bin/bash
 #
-# Runs the OpenPanel (user panel) Playwright suite headlessly, on a single
-# worker, updates this folder's README.md with a results table, and pushes
-# that to git so results can be checked online.
+# Runs the OpenPanel (user panel) Playwright suite headlessly, spec files in
+# parallel on $WORKERS workers (default 4) and then tests/serial/ on one,
+# updates this folder's README.md with a results table, and pushes that to
+# git so results can be checked online.
 #
 # Meant to be invoked from cron on the test runner, e.g.:
 #   0 22 * * * /root/playwright-test/openpanel/run-tests.sh
 #
 # Can also be run manually:
 #   ./run-tests.sh
+#   WORKERS=8 ./run-tests.sh
 #
 # To test the README-build + commit/push step alone, without waiting on a
 # full (slow) test run, reuse the last JSON results file:
@@ -56,7 +58,7 @@ else
   {
     echo "=== $LABEL tests starting at $(date) ==="
 
-    npx playwright test -c openpanel/playwright.config.ts --project=tests --workers=1 --reporter=list,html,json
+    npx playwright test -c openpanel/playwright.config.ts --project=tests --workers="${WORKERS:-4}" --reporter=list,html,json
     TEST_STATUS=$?
 
     echo "=== $LABEL tests finished at $(date) with exit code $TEST_STATUS ==="

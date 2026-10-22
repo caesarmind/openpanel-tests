@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains, runInstaller } from '../helpers';
 
 const DOMAIN = 'mediawiki.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const SITE_NAME = 'My Wiki';
 const ADMIN_EMAIL = `admin@${DOMAIN}`;
 
@@ -19,9 +25,7 @@ test.describe('MediaWiki autoinstaller', () => {
     await page.locator('#admin_email').fill(ADMIN_EMAIL);
     // admin_username, admin_password and db_* fields are pre-filled by the page's own JS
 
-    await page.locator('#installButton').click();
-
-    await expect(page.getByText(/installation completed/i)).toBeVisible({ timeout: 8 * 60 * 1000 });
+    await runInstaller(page, 'mediawiki', 8 * 60 * 1000);
   });
 
   test('2. verify app appears on /sites', async ({ page }) => {

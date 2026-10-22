@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { ensureDomains } from '../helpers';
 
-const domain = 'wp.tests.openpanel.org';
+// read-only use, so it shares a domain with other specs that only look at it
+const domain = 'shared.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, domain);
+});
 
 
 test('traffic stats page loads', async ({ page }) => {

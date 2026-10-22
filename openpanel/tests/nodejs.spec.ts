@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains } from '../helpers';
 
 // https://github.com/stefanpejcic/nodejs-helloworld
 
 const DOMAIN = 'nodejs.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
+
 const APP_NAME = 'nodeaplikacija';
 const PORT = '3000';
 const NODE_VERSION = '25.9.0';
@@ -83,6 +89,8 @@ test.describe('Node.js autoinstaller', () => {
   });
 
   test('4. verify app is responding', async ({ page }) => {
+    // polls the site for up to 90s below
+    test.setTimeout(3 * 60 * 1000);
     // process.version returns e.g. "v25.9.0", strip the leading "v" if version lacks it
     const nodeVersion = NODE_VERSION.startsWith('v') ? NODE_VERSION : `v${NODE_VERSION}`;
     const expected = `Hello World from Node.js ${nodeVersion} on port ${PORT}!`;

@@ -1,4 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import { ensureDomains } from '../../helpers';
+
+// the webserver page check needs at least one domain on the account
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, 'shared.tests.openpanel.org');
+});
 
 // ─────────────────────────────────────────────
 // /containers  (main table)
@@ -79,6 +85,41 @@ test('containers page New Service button navigates to add form', async ({ page }
   await expect(page.locator('h1')).toContainText('Add a container');
 });
 
+// sets a cpu or ram limit inline on the row, returns what was set before
+async function setLimit(page: Page, row: Locator, kind: 'cpu' | 'ram', value: string): Promise<string> {
+  const cell = row.locator(`td[x-show*="${kind}"]`);
+  await row.hover();
+  await cell.hover();
+  await cell.locator('a').first().click();
+
+  const input = cell.locator('input[name="value"]');
+  await expect(input).toBeVisible();
+  const before = await input.inputValue();
+  await input.fill(value);
+
+  await Promise.all([
+    page.waitForResponse(resp =>
+      resp.url().includes(`/containers/${kind}/`) && resp.request().method() === 'POST'
+    ),
+    cell.locator('button[type="submit"]').click(),
+  ]);
+  await expect(input).toBeHidden();
+  return before;
+}
+
+async function startStop(page: Page, row: Locator, action: 'start' | 'stop') {
+  await row.hover();
+  const btn = row.locator('td[x-show*="actions"]').getByRole('button', { name: action === 'start' ? 'Start' : 'Stop', exact: true }).first();
+  await Promise.all([
+    page.waitForResponse(resp =>
+      resp.url().includes(`/containers/${action}/`) && resp.request().method() === 'POST'
+    ),
+    btn.click(),
+  ]);
+  await expect(page.locator('body')).toContainText(action === 'start' ? /(?<!de)activated successfully/i : /deactivated successfully/i);
+}
+
+// every container gets its limits and running state back, the specs after this one still need them
 test('edit cpu, ram and toggle container state for all rows', async ({ page }) => {
   test.setTimeout(9000_000);
   await page.goto('/containers');
@@ -91,79 +132,40 @@ test('edit cpu, ram and toggle container state for all rows', async ({ page }) =
     // cron (ofelia) restart-loops on an account with no cron jobs, so a live limit change can hit it mid-restart
     const service = (await row.locator('form[action^="/containers/cpu/"]').getAttribute('action'))?.split('/').pop();
     if (service === 'cron') continue;
-    await row.hover();
 
     // 1. EDIT CPU
-    const cpuCell = row.locator('td[x-show*="cpu"]');
-    await cpuCell.hover();
-    await cpuCell.locator('a').first().click();
-
-    const cpuInput = cpuCell.locator('input[name="value"]');
-    await expect(cpuInput).toBeVisible();
-    await cpuInput.fill('1');
-
-    await Promise.all([
-      page.waitForResponse(resp =>
-        resp.url().includes('/containers/cpu/') && resp.request().method() === 'POST'
-      ),
-      cpuCell.locator('button[type="submit"]').click(),
-    ]);
-
-    await expect(cpuInput).toBeHidden();
+    const cpuBefore = await setLimit(page, row, 'cpu', '1');
     await expect(page.locator('body')).toContainText(/Max CPU for container/i);
     await expect(page.locator('body')).toContainText(/set to 1/i);
 
     // 2. EDIT RAM
-    const ramCell = row.locator('td[x-show*="ram"]');
-    await ramCell.hover();
-    await ramCell.locator('a').first().click();
-
-    const ramInput = ramCell.locator('input[name="value"]');
-    await expect(ramInput).toBeVisible();
-    await ramInput.fill('1');
-
-    await Promise.all([
-      page.waitForResponse(resp =>
-        resp.url().includes('/containers/ram/') && resp.request().method() === 'POST'
-      ),
-      ramCell.locator('button[type="submit"]').click(),
-    ]);
-
-    await expect(ramInput).toBeHidden();
+    const ramBefore = await setLimit(page, row, 'ram', '1');
     await expect(page.locator('body')).toContainText(/Max RAM for container/i);
     await expect(page.locator('body')).toContainText(/set to 1G/i);
 
-    // 3. ENSURE FINAL STATE = STOPPED
+    // 3. RESTORE LIMITS
+    await setLimit(page, rows.nth(i), 'cpu', cpuBefore);
+    await setLimit(page, rows.nth(i), 'ram', ramBefore);
+
+    // 4. TOGGLE STATE, ending where it started
     const freshRow = rows.nth(i);
     await freshRow.hover();
-
     const actionsCell = freshRow.locator('td[x-show*="actions"]');
     const startBtn = actionsCell.getByRole('button', { name: 'Start', exact: true }).first();
     const stopBtn = actionsCell.getByRole('button', { name: 'Stop', exact: true }).first();
 
-    const hasStartBtn = await startBtn.count();
-    if (hasStartBtn > 0 && await startBtn.isVisible()) {
-      await Promise.all([
-        page.waitForResponse(resp =>
-          resp.url().includes('/containers/start/') && resp.request().method() === 'POST'
-        ),
-        startBtn.click(),
-      ]);
-      await expect(page.locator('body')).toContainText(/activated successfully/i);
+    if (await stopBtn.count() && await stopBtn.isVisible()) {
+      await startStop(page, rows.nth(i), 'stop');
+      await startStop(page, rows.nth(i), 'start');
+      await rows.nth(i).hover();
       await expect(stopBtn).toBeVisible({ timeout: 30_000 });
-    }
-
-    const hasStopBtn = await stopBtn.count();
-    if (hasStopBtn > 0 && await stopBtn.isVisible()) {
-      await Promise.all([
-        page.waitForResponse(resp =>
-          resp.url().includes('/containers/stop/') && resp.request().method() === 'POST'
-        ),
-        stopBtn.click(),
-      ]);
-      await expect(page.locator('body')).toContainText(/deactivated successfully/i);
+    } else if (await startBtn.count() && await startBtn.isVisible()) {
+      await startStop(page, rows.nth(i), 'start');
+      await rows.nth(i).hover();
+      await expect(stopBtn).toBeVisible({ timeout: 30_000 });
+      await startStop(page, rows.nth(i), 'stop');
     } else {
-      console.log(`Container row ${i + 1} has no visible Stop button, already stopped or not startable`);
+      console.log(`Container row ${i + 1} (${service}) has no visible Start or Stop button`);
     }
 
     await page.waitForTimeout(2000);
@@ -508,13 +510,16 @@ test('terminal', async ({ page }) => {
   test.setTimeout(90_000);
 
   await page.goto('/containers/terminal/php-fpm-8.5');
+  const terminalOutput = page.locator('.xterm-rows');
+  // keys typed before the shell has attached are lost, e.g. right after the container was restarted
+  await expect(terminalOutput).toContainText(/[#$]\s*$/, { timeout: 30_000 });
   await page.locator('.xterm-rows > div').first().click();
   await page.locator('.xterm-rows > div').first().click({ button: 'right' });
-  await page.getByRole('textbox', { name: 'Terminal input' }).fill('php -v');
-  await page.getByRole('textbox', { name: 'Terminal input' }).press('Enter');
-
-  const terminalOutput = page.locator('.xterm-rows');
-  await expect(terminalOutput).toContainText('The PHP Group');
+  await expect(async () => {
+    await page.getByRole('textbox', { name: 'Terminal input' }).fill('php -v');
+    await page.getByRole('textbox', { name: 'Terminal input' }).press('Enter');
+    await expect(terminalOutput).toContainText('The PHP Group', { timeout: 10_000 });
+  }).toPass({ timeout: 60_000 });
 
   console.log('php -v executed successfully');
 });

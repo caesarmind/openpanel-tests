@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
+import { ensureDomains } from '../helpers';
 
-const domain = 'wp.tests.openpanel.org';
+// own domain, the waf, maintenance and remove tests change what it serves
+const domain = 'wordpress.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, domain);
+});
 
 const WP_ADMIN = {
   url: `https://${domain}/wp-admin`,
@@ -37,15 +43,19 @@ test('install wordpress', async ({ page }) => {
 
   await page.locator('#installButton').click();
 
-  await expect(page.getByText(/WordPress installation completed!/i)).toBeVisible({ timeout: 30000 });
+  // slower while other workers install apps too
+  await expect(page.getByText(/WordPress installation completed!/i)).toBeVisible({ timeout: 5 * 60_000 });
   console.log('wordpress install completed');
 
   await page.goto('/wordpress');
   await expect(page.locator('body')).toContainText(domain, { timeout: 20000 });
   console.log('wordpress site appears in list');
 
-  await page.goto(`http://${domain}`);
-  await expect(page.locator('body')).toContainText('Hello world!');
+  // the first requests right after the install can come back empty, so reload until the post shows
+  await expect(async () => {
+    await page.goto(`http://${domain}`);
+    await expect(page.locator('body')).toContainText('Hello world!', { timeout: 5000 });
+  }).toPass({ timeout: 60_000 });
   console.log('wordpress install is working');
 });
 
@@ -190,7 +200,7 @@ test('wordpress vulnerability scan', async ({ page }) => {
 
 
 test('wp-cli check update preferences check', async ({ page }) => {
-  await page.goto(`/wordpress/wp-cli/update_info?domain=${domain}&docroot=/var/www/html/wp.tests.openpanel.org`);  
+  await page.goto(`/wordpress/wp-cli/update_info?domain=${domain}&docroot=/var/www/html/wordpress.tests.openpanel.org`);  
   await expect(page.locator('body')).toContainText(/WP_AUTO_UPDATE_CORE|WP_AUTO_UPDATE_PLUGINS|WP_AUTO_UPDATE_THEMES/i, { timeout: 30000 });
   console.log('wp-cli update check working');
 });
@@ -217,7 +227,7 @@ test('generate backup', async ({ page }) => {
 
 test('list backup', async ({ page }) => {
   test.setTimeout(3 * 60 * 1000);
-  await page.goto(`/wordpress/backup/get_dates/${domain}?docroot=/var/www/html/wp.tests.openpanel.org`);
+  await page.goto(`/wordpress/backup/get_dates/${domain}?docroot=/var/www/html/wordpress.tests.openpanel.org`);
   await expect(page.locator('body')).toContainText(/hasFilesBackup|hasDbBackup|date/i, { timeout: 2 * 60 * 1000 });
   console.log('wordpress backup available');
 });
@@ -235,7 +245,7 @@ test('wordpress reload data', async ({ page }) => {
 // TODO: cover wp-manager tabs: security, updates, debugging, backup, clone, remove
 
 test('wp manager data', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   // WP version (e.g. 6.5.2)
   const wpVersion = await page.locator('#wp-version').textContent();
@@ -281,7 +291,7 @@ test('wp manager data', async ({ page }) => {
 
 
 test('live preview', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   const popupPromise = page.waitForEvent('popup');
   await page.getByRole('link', { name: 'Live Preview' }).click();
@@ -295,7 +305,7 @@ test('live preview', async ({ page }) => {
 
 
 test('wp-admin autologin', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   const popupPromise = page.waitForEvent('popup');
   await page.locator('#login_button_text').click();
@@ -309,7 +319,7 @@ test('wp-admin autologin', async ({ page }) => {
 
 
 test('general options', async ({ page }) => {
-  const domain = 'wp.tests.openpanel.org';
+  const domain = 'wordpress.tests.openpanel.org';
   const websiteUrl = `/website?domain=${domain}`;
 
   const newBlogName = 'Test Blog Name';
@@ -444,7 +454,7 @@ test('general options', async ({ page }) => {
 
 
 test('maintenance mode', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
   await openSiteTab(page, 'maintenance');
 
   // Wait for the status span to appear and get its text
@@ -464,7 +474,7 @@ test('maintenance mode', async ({ page }) => {
 
   await page.waitForTimeout(5000);
 
-  const randomUri = `https://wp.tests.openpanel.org?${Math.random().toString(36).slice(2)}`;
+  const randomUri = `https://wordpress.tests.openpanel.org?${Math.random().toString(36).slice(2)}`;
   await page.goto(randomUri);
 
   if (wasEnabled) {
@@ -474,7 +484,7 @@ test('maintenance mode', async ({ page }) => {
   }
 
   // --- Round 2: toggle back to original state and verify ---
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
   await openSiteTab(page, 'maintenance');
   // the button only gets its enable/disable action once the status has loaded
   await expect(page.locator('#runMaintenance_action')).toHaveAttribute('data-action', wasEnabled ? 'enable' : 'disable');
@@ -488,7 +498,7 @@ test('maintenance mode', async ({ page }) => {
 
   await page.waitForTimeout(5000);
 
-  const randomUri2 = `https://wp.tests.openpanel.org?${Math.random().toString(36).slice(2)}`;
+  const randomUri2 = `https://wordpress.tests.openpanel.org?${Math.random().toString(36).slice(2)}`;
   await page.goto(randomUri2);
 
   if (wasEnabled) {
@@ -502,31 +512,31 @@ test('maintenance mode', async ({ page }) => {
 
 
 test('cache flush', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   // the old Purge WP Cache button became Purge all on the Cache tab, it also clears Varnish and Redis
   await openSiteTab(page, 'caching');
   const purge = page.getByRole('button', { name: /Purge all/ });
   await expect(purge).toBeEnabled({ timeout: 30000 });
   await purge.click();
-  await expect(page.getByText(/All caches purged for wp\.tests\.openpanel\.org/)).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText(/All caches purged for wordpress\.tests\.openpanel\.org/)).toBeVisible({ timeout: 30000 });
 
   console.log('flush wp cache is working');
 });
 
 
 test('live visitors count', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   // 1. Get initial value
   const initialText = await page.locator('#visitors_data').innerText();
   const initialValue = parseInt(initialText, 10);
 
   // 2. Trigger a real request
-  await page.request.get('https://wp.tests.openpanel.org');
+  await page.request.get('https://wordpress.tests.openpanel.org');
 
   // 3. Reload page
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   // 4. Wait up to 60s for value to change
   await page.waitForFunction(
@@ -547,14 +557,14 @@ test('live visitors count', async ({ page }) => {
 
 
 test('waf on/off', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   await page.locator('#waf_toggle_btn').click();
-  const message = await page.getByText(/Firewall for wp\.tests\.openpanel\.org is now (On|Off)/).innerText();
+  const message = await page.getByText(/Firewall for wordpress\.tests\.openpanel\.org is now (On|Off)/).innerText();
   const isOn = message.includes('On');
 
   // a clean request passes either way, only an attack-looking one shows the firewall is on
-  const attackUrl = `https://wp.tests.openpanel.org/?q=<script>alert(1)</script>`;
+  const attackUrl = `https://wordpress.tests.openpanel.org/?q=<script>alert(1)</script>`;
   const status = async () => (await page.request.get(attackUrl, { failOnStatusCode: false })).status();
   if (isOn) {
     await expect.poll(status, { timeout: 30_000 }).toBeGreaterThanOrEqual(403);
@@ -566,7 +576,7 @@ test('waf on/off', async ({ page }) => {
 
 
 test('wp remove', async ({ page }) => {
-  await page.goto('/website?domain=wp.tests.openpanel.org');
+  await page.goto('/website?domain=wordpress.tests.openpanel.org');
 
   await openSiteTab(page, 'remove');
 
@@ -592,7 +602,7 @@ test('wp remove', async ({ page }) => {
   await page.goto('/sites');
 
   await expect(
-    page.locator('tr[id="site-row-wp.tests.openpanel.org"]')
+    page.locator('tr[id="site-row-wordpress.tests.openpanel.org"]')
   ).toHaveCount(0);
 
   console.log('website uninstall is working');

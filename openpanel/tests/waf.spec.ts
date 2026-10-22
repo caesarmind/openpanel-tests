@@ -1,4 +1,12 @@
 import { test, expect, Page, Locator } from '@playwright/test';
+import { ensureDomains } from '../helpers';
+
+// own domain, the firewall blocks requests other specs would make to a shared one
+const DOMAIN = 'waf.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+});
 
 const BLOCKED_STATUSES = [403, 406, 409, 422];
 
@@ -100,7 +108,7 @@ test('waf status', async ({ page }) => {
 test('waf on/off and disabled rules for domain', async ({ page }) => {
   test.setTimeout(120_000);
 
-  const domain = 'wp.tests.openpanel.org';
+  const domain = DOMAIN;
 
   const blockedUrl = `https://${domain}/?q=<script>alert(1)</script>`;
   const cleanUrl = `https://${domain}/`;
@@ -146,7 +154,7 @@ test('waf on/off and disabled rules for domain', async ({ page }) => {
 });
 
 test('waf logs show blocked requests for domain', async ({ page }) => {
-  const domain = 'wp.tests.openpanel.org';
+  const domain = DOMAIN;
   const blockedUrl = `https://${domain}/?q=<script>alert(1)</script>`;
 
   await setWaf(page, domain, true);

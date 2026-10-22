@@ -1,8 +1,21 @@
 import { test, expect, type Page } from '@playwright/test';
 import { generate } from 'otplib';
+import { withProjectPage } from '../../helpers';
 
 const USERNAME = process.env.PANEL_USERNAME;
 const PASSWORD = process.env.PANEL_PASSWORD;
+
+// left enabled, every login after this spec would stop at the 2FA prompt
+test.afterAll(async ({ browser }, testInfo) => {
+  await withProjectPage(browser, testInfo, async page => {
+    await page.goto('/account/2fa');
+    const disable = page.locator('button:has-text("Click to disable 2FA")');
+    if (await disable.isVisible()) {
+      await disable.click();
+      await expect(page.getByText('2FA is currently disabled')).toBeVisible();
+    }
+  });
+});
 
 // ENABLE
 test('enable 2FA', async ({ page }) => {

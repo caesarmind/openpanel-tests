@@ -1,5 +1,6 @@
 
 import { test, expect, request as pwRequest, APIRequestContext, APIResponse } from '@playwright/test';
+import { ensureDomains, withLock } from '../helpers';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -7,7 +8,7 @@ import { test, expect, request as pwRequest, APIRequestContext, APIResponse } fr
 const BASE_URL       = process.env.BASE_URL!;
 const API_USER       = process.env.PANEL_USERNAME!;
 const API_PASS       = process.env.PANEL_PASSWORD!;
-const TEST_DOMAIN    = process.env.TEST_DOMAIN ?? 'wp.tests.openpanel.org';
+const TEST_DOMAIN    = process.env.TEST_DOMAIN ?? 'shared.tests.openpanel.org';
 const RUN_MUTATIONS  = process.env.RUN_MUTATIONS === 'true';
 
 const mtest = RUN_MUTATIONS ? test : test.skip;
@@ -64,7 +65,9 @@ function logged(ctx: APIRequestContext): APIRequestContext {
 // ---------------------------------------------------------------------------
 let api: APIRequestContext;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, TEST_DOMAIN);
+
   const anonCtx = await pwRequest.newContext({ baseURL: BASE_URL });
   try {
     const res = await anonCtx.post('/api/login', {
@@ -1938,7 +1941,9 @@ test.describe('GET /api/domains/:domain/logs', () => {
     expect([200, 403, 404]).toContain(res.status());
     if (res.status() === 200) {
       const json = await res.json();
-      expect(json).toHaveProperty('total_pages');
+      // an empty access log (no visits yet) comes back without pagination
+      if (json.total > 0) expect(json).toHaveProperty('total_pages');
+      else expect(json.logs).toEqual([]);
     }
   });
 });
@@ -1950,7 +1955,8 @@ mdescribe('/api/domains create -> suspend -> unsuspend -> delete lifecycle', () 
 
   test('POST creates the domain', async () => {
     test.skip(!domain, 'set TEST_NEW_DOMAIN to a disposable domain pointed at this panel');
-    const res = await api.post('/api/domains', { data: { domain } });
+    // same lock the UI specs add domains under, so their dashboard counts don't move
+    const res = await withLock('domains', () => api.post('/api/domains', { data: { domain } }));
     expect(res.status()).toBe(201);
   });
 
@@ -1968,7 +1974,7 @@ mdescribe('/api/domains create -> suspend -> unsuspend -> delete lifecycle', () 
 
   test('DELETE removes the domain', async () => {
     test.skip(!domain, 'no TEST_NEW_DOMAIN configured');
-    const res = await api.delete(`/api/domains/${domain}`);
+    const res = await withLock('domains', () => api.delete(`/api/domains/${domain}`));
     expect(res.status()).toBe(200);
   });
 });

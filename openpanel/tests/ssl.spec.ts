@@ -1,9 +1,16 @@
 import { test, expect } from '@playwright/test';
 import tls from 'tls';
+import { ensureDomains, waitForCert, withProjectPage } from '../helpers';
 
 test.use({ ignoreHTTPSErrors: true });
 
+// the custom certificate below is issued for wp.tests.openpanel.org, so no other spec uses this domain
 const DOMAIN = 'wp.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, DOMAIN);
+  await withProjectPage(browser, testInfo, page => waitForCert(page, DOMAIN));
+});
 
 
 const CERT_PEM = `-----BEGIN CERTIFICATE-----

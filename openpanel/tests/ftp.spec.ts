@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as ftp from 'basic-ftp';
 import { Readable, Writable } from 'stream';
+import { ensureDomains } from '../helpers';
 
 // npm install basic-ftp
 
@@ -9,6 +10,10 @@ const FTP_DOMAIN = 'files.tests.openpanel.org';
 const FTP_PASS = 'b&tK3C9+cncXl%Ut';
 const FTP_NEW_PASS = 'N3wP@ssw0rd!xyz';
 const FTP_PATH = '/var/www/html/files.tests.openpanel.org';
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await ensureDomains(browser, testInfo, FTP_DOMAIN);
+});
 
 let ftpHost: string;
 

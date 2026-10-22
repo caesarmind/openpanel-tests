@@ -1,27 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { randomBytes } from 'crypto';
 import dns from 'dns';
+import { addDomain, hasDomain, waitForCert, withLock } from '../../helpers';
 
+// only this spec's own domains, every other spec adds the domain it needs itself
+const DOMAIN = 'domains.tests.openpanel.org';
 const DOMAINS = [
-  'wp.tests.openpanel.org',
-  'php.tests.openpanel.org',
-  'nodejs.tests.openpanel.org',
-  'python.tests.openpanel.org',
-  'website-builder.tests.openpanel.org',
-  'files.tests.openpanel.org',
+  DOMAIN,
   'redirect.tests.openpanel.org',
-  'drupal.tests.openpanel.org',
-  'joomla.tests.openpanel.org',
-  'opencart.tests.openpanel.org',
-  'nextcloud.tests.openpanel.org',
-  'prestashop.tests.openpanel.org',
-  'moodle.tests.openpanel.org',
-  'mediawiki.tests.openpanel.org',
-  'matomo.tests.openpanel.org',
-  'apps.tests.openpanel.org',
-  'java.tests.openpanel.org',
-  'ruby.tests.openpanel.org',
-  'n8n.tests.openpanel.org',
   'to-be-removed.com',
 ];
 
@@ -54,92 +40,64 @@ async function expectDomainNotInTable(page: Page, domain: string) {
 
 
 
-async function addDomain(page, domain) {
-  await page.goto(`/domains/new`);
-  await expect(page).toHaveURL(/domains\/new/);
-  await page.getByRole('textbox', { name: 'Domain*' }).fill(domain);
-  await page.getByRole('button', { name: 'Add Domain' }).click();
-
-  await expect(page.getByText(`Domain name ${domain} added successfully`)).toBeVisible();
-  console.log(`Domain added: ${domain}`);
-}
-
-
-
 test('add domains', async ({ page }) => {
-  test.setTimeout(200_000);
+  // can wait in the lock queue behind other workers adding their domains
+  test.setTimeout(15 * 60_000);
 
-  await page.goto('/dashboard');
-  const initialCount = await getDomainCount(page);
-  let expectedCount = initialCount;
-
-  // lets the suite rerun on a server that already has some of the domains
-  await page.goto('/domains');
-  const existing = (await page.locator('table').textContent()) || '';
-
-  for (const domain of DOMAINS) {
-    if (existing.includes(domain)) {
-      console.log(`Domain already exists: ${domain}`);
-      continue;
-    }
-    await addDomain(page, domain);
-
-    // table check
-    await page.goto('/domains');
-    await expectDomainInTable(page, domain);
-    expectedCount++;
-
-    // dashboard check
+  // a spec run on its own elsewhere adds domains under the same lock, so the dashboard count only moves because of this spec
+  await withLock('domains', async () => {
     await page.goto('/dashboard');
-    await expect.poll(async () => {return await getDomainCount(page);}).toBe(expectedCount);
-  }
+    let expectedCount = await getDomainCount(page);
+
+    for (const domain of DOMAINS) {
+      // lets the suite rerun on a server that already has some of the domains
+      if (await hasDomain(page, domain)) {
+        console.log(`Domain already exists: ${domain}`);
+        continue;
+      }
+      await addDomain(page, domain);
+
+      // table check
+      await page.goto('/domains');
+      await expectDomainInTable(page, domain);
+      expectedCount++;
+
+      // dashboard check
+      await page.goto('/dashboard');
+      await expect.poll(async () => {return await getDomainCount(page);}).toBe(expectedCount);
+    }
+  });
 });
 
 test('verify files created for a new domain', async ({ page }) => {
   // domains page shows new domain
   await page.goto(`/domains`);
-  await expect(page.locator('td[x-show="columns.domain"]', { hasText: 'wp.tests.openpanel.org' })).toBeVisible();
+  await expect(page.locator('td[x-show="columns.domain"]', { hasText: DOMAIN })).toBeVisible();
   console.log(`domain visible`);
 
   // docroot created
   await page.goto(`/files`);
   await expect(page).toHaveURL(/files/);
-  await expect(page.getByText(/wp.tests.openpanel.org/i)).toBeVisible();
+  await expect(page.getByText(new RegExp(DOMAIN.replace(/\./g, '\\.'), 'i')).first()).toBeVisible();
   console.log(`document root visible`);
 
   // DNS zone created
-  await page.goto(`/domains\/edit-dns-zone\/wp.tests.openpanel.org`);
-  await expect(page).toHaveURL(/domains\/edit-dns-zone\/wp.tests.openpanel.org/);
+  await page.goto(`/domains/edit-dns-zone/${DOMAIN}`);
+  await expect(page).toHaveURL(new RegExp(`domains/edit-dns-zone/${DOMAIN}`));
   await expect(page.getByText(/spf1/i)).toBeVisible();
   console.log(`zone file exists`);
 
   // vhosts file created
-  await page.goto(`/domains\/vhosts?domain=wp.tests.openpanel.org`);
+  await page.goto(`/domains/vhosts?domain=${DOMAIN}`);
   await expect(page.locator('#editor')).toContainText('index.php');  
   console.log(`vhost file exists`);
 
-  // SSL generation
-  await page.goto('http://wp.tests.openpanel.org', {
-    waitUntil: 'domcontentloaded',
-  });
-  const certData = page.locator('#certData');
-  const start = Date.now();
-  
-  while (Date.now() - start < 15000) {
-    await page.goto('/domains/ssl?domain_name=wp.tests.openpanel.org');
-  
-    try {
-      await expect(certData).toBeVisible({ timeout: 8000 });
-      break;
-    } catch (e) {
-      // retry
-    }
-  }
-  await expect(certData).toBeVisible();
+  // SSL generation, the domain was only just added so give it time
+  await waitForCert(page, DOMAIN);
   console.log(`cert file exists`);
 
   // logs
-  //await page.goto('/domains/log/wp.tests.openpanel.org');
+  //await page.goto(`/domains/log/${DOMAIN}`);
   //const logRows = page.locator('#logs-table tbody tr');
   //await expect(logRows.filter({ hasText: '/' }).first()).toBeVisible();
   //console.log('logs are working');
@@ -152,13 +110,13 @@ test('search domains', async ({ page }) => {
   const searchBox = page.getByRole('searchbox', { name: 'Search' });
   const rows = page.locator('tbody tr');
 
-  await searchBox.fill('wp.tests.openpanel.org');
+  await searchBox.fill(DOMAIN);
   const count = await rows.count();
   expect(count).toBeGreaterThan(0);
 
   const visibleRows = rows.filter({ has: page.locator(':visible') });
   await expect(visibleRows).toHaveCount(1);
-  await expect(visibleRows.first()).toContainText(/wp\.tests\.openpanel\.org/i);
+  await expect(visibleRows.first()).toContainText(new RegExp(DOMAIN.replace(/\./g, '\\.'), 'i'));
 
   await expect(rows.filter({ hasNot: page.locator(':visible') })).toHaveCount(
     (await rows.count()) - 1
@@ -220,7 +178,7 @@ test('check columns for domains table', async ({ page }) => {
 
 
 test('vhost editor', async ({ page }) => {
-  await page.goto(`/domains/vhosts?domain=wp.tests.openpanel.org`);
+  await page.goto(`/domains/vhosts?domain=${DOMAIN}`);
 
   // TODO: add header for ols, apache, nginx
   //       then curl the domain and check for header
@@ -230,8 +188,7 @@ test('vhost editor', async ({ page }) => {
 
 test('change docroot', async ({ page }) => {
   const NEW_FOLDER = `folder_${Math.random().toString(36).substring(7)}`;
-  const DOMAIN = 'wp.tests.openpanel.org';
-
+  
   // 1. Create a dummy PHP file in the new folder
   await page.goto(`/files`);
   await page.getByRole('button', { name: ' New Folder' }).click();
@@ -289,7 +246,7 @@ test('change docroot', async ({ page }) => {
 
 
 // USED BY DNS EDITOR CHECKS
-const domain = 'wp.tests.openpanel.org';
+const domain = DOMAIN;
 const recordValue = `verify-${process.env.TEST_RUN_ID || randomBytes(6).toString('hex')}`;
 
 // ask the panel's own nameserver directly instead of going through a third-party dig website
@@ -604,7 +561,7 @@ test('redirects', async ({ page }) => {
 
 
 test('suspend domain', async ({ page }) => {
-  const domain = 'wp.tests.openpanel.org';
+  const domain = DOMAIN;
 
   await page.goto(`/domains/suspend?domain=${domain}`);
   await page.locator('#confirm-suspend').click();
@@ -626,7 +583,7 @@ test('suspend domain', async ({ page }) => {
 
 
 test('unsuspend domain', async ({ page }) => {
-  const domain = 'wp.tests.openpanel.org';
+  const domain = DOMAIN;
 
   await page.goto(`/domains/unsuspend?domain=${domain}`);
   await page.locator('#confirm-unsuspend').click();
@@ -651,25 +608,31 @@ test('unsuspend domain', async ({ page }) => {
 
 // DELETE SINGLE DOMAIN!
 test('delete domain', async ({ page }) => {
+  test.setTimeout(10 * 60_000);
   const domain = 'to-be-removed.com';
-  await page.goto('/dashboard');
-  const initialCount = await getDomainCount(page);
 
-  // go to delete page
-  await page.goto(`/domains/delete?domain=${domain}`);
+  await withLock('domains', async () => {
+    if (!(await hasDomain(page, domain))) await addDomain(page, domain);
 
-  const deleteButton = page.getByRole('button', { name: /delete domain/i });
-  await expect(deleteButton).toBeVisible();
-  await deleteButton.click();
-  await expect(page.locator('body')).toContainText(/deleted successfully/i);
-  console.log(`Domain deleted: ${domain}`);
+    await page.goto('/dashboard');
+    const initialCount = await getDomainCount(page);
 
-  // verify it's gone from table/listing page
-  await page.goto('/domains');
-  await expect(page.locator('table')).not.toContainText(domain);
+    // go to delete page
+    await page.goto(`/domains/delete?domain=${domain}`);
 
-  // verify dashboard count decreased
-  await page.goto('/dashboard');
-  const finalCount = await getDomainCount(page);
-  expect(finalCount).toBe(initialCount - 1);
+    const deleteButton = page.getByRole('button', { name: /delete domain/i });
+    await expect(deleteButton).toBeVisible();
+    await deleteButton.click();
+    await expect(page.locator('body')).toContainText(/deleted successfully/i);
+    console.log(`Domain deleted: ${domain}`);
+
+    // verify it's gone from table/listing page
+    await page.goto('/domains');
+    await expect(page.locator('table')).not.toContainText(domain);
+
+    // verify dashboard count decreased
+    await page.goto('/dashboard');
+    const finalCount = await getDomainCount(page);
+    expect(finalCount).toBe(initialCount - 1);
+  });
 });
