@@ -451,13 +451,16 @@ test('configuration editor', async ({ page }) => {
   await page.locator('#interactive_timeout').fill('90');
   await page.locator('#wait_timeout').fill('300');
   await page.getByRole('button', { name: 'Save Changes' }).click();
-  await expect(page.locator('body')).toContainText(/configuration updated and service restarted/i);
-  await page.waitForLoadState('networkidle');
+  // settings mysql can change live are applied without a restart, the rest restart the service
+  const saved = page.locator('body');
+  await expect(saved).toContainText(/configuration updated and (service restarted|applied without a restart)/i);
+  const restarted = /service restarted/i.test(await saved.innerText());
+  await page.waitForLoadState('domcontentloaded');
   await expect(page.locator('#interactive_timeout')).toHaveValue('90');
   await expect(page.locator('#wait_timeout')).toHaveValue('300');
-  console.log('mysql configuration is saved');
-  // Wait for MySQL container to finish restarting before next test
-  await page.waitForTimeout(10000);//TODO smisliti pametnije resenje
+  console.log(`mysql configuration is saved (${restarted ? 'restarted' : 'applied live'})`);
+  // only a restart needs time before the next test
+  if (restarted) await page.waitForTimeout(10000);
 });
 
 
@@ -527,8 +530,11 @@ test('export', async ({ page }) => {
 
     if (!(await exportBox.isVisible())) {
       await expect(exportButton).toBeVisible();
-      await exportButton.click();
-      await expect(exportBox).toBeVisible();
+      // a click before alpine has started on the page does nothing, so click again until it opens
+      await expect(async () => {
+        if (!(await exportBox.isVisible())) await exportButton.click();
+        await expect(exportBox).toBeVisible({ timeout: 2000 });
+      }).toPass({ timeout: 20000 });
     }
 
     return exportBox;

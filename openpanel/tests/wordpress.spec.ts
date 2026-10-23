@@ -62,7 +62,11 @@ test('install wordpress', async ({ page }) => {
 
 test.describe.serial('wp-admin tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(WP_ADMIN.url, { waitUntil: 'domcontentloaded' });
+    // right after a plugin or core update the site can briefly serve a maintenance page instead of the form, so reload until it's there
+    await expect(async () => {
+      await page.goto(WP_ADMIN.url.replace(/\/wp-admin$/, '/wp-login.php'), { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await expect(page.locator('#user_login'), `no login form, page shows: ${(await page.locator('body').innerText()).slice(0, 200)}`).toBeVisible({ timeout: 30000 });
+    }).toPass({ timeout: 180000 });
     await page.fill('#user_login', WP_ADMIN.username);
     await page.fill('#user_pass', WP_ADMIN.password);
     await Promise.all([
@@ -141,8 +145,10 @@ test('wp-admin - install nexusslash theme', async ({ page }) => {
 
   // the search goes out to api.wordpress.org and sometimes comes back empty, so reload it
   await expect(async () => {
+    // not networkidle, wp-admin's heartbeat and the theme API search keep the network busy so it can hang
     await page.goto(`${WP_ADMIN.url}/theme-install.php?search=nexusslash`, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
     });
     await expect(nexusslashTheme).toBeVisible({ timeout: 20000 });
   }).toPass({ timeout: 120000 });
@@ -162,8 +168,9 @@ test('wp-admin - install nexusslash theme', async ({ page }) => {
       'a.activate, a.theme-activate, .button.activate'
     );
 
+    // the theme zip comes from wordpress.org, same allowance as the plugin install
     await expect(activateButton).toBeVisible({
-      timeout: 20000,
+      timeout: 60000,
     });
 
     console.log('NexusSlash installation completed.');
