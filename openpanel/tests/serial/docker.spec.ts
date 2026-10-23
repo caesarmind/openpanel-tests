@@ -234,7 +234,15 @@ test('add new service - invalid name shows error', async ({ page }) => {
 
   await expect(submit).toBeEnabled();
 
-  await submit.click();
+  // wait for the create to finish, ending the test right after the click could cut the request off
+  await Promise.all([
+    page.waitForURL(url => !url.pathname.startsWith('/containers/new'), { timeout: 120_000 }),
+    submit.click(),
+  ]);
+  await expect.poll(async () => {
+    await page.goto('/containers');
+    return page.locator('#containers-table tbody input.bulk-select-box[value="testapp"]').count();
+  }, { timeout: 120_000, intervals: [3000] }).toBe(1);
 });
 test('add new service - image blur suggests service name', async ({ page }) => {
   await page.goto('/containers/new');

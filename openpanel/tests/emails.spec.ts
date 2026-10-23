@@ -353,6 +353,12 @@ test.describe.serial('email quota', () => {
     await page.goto(`/emails/edit/${address}`);
     await expect(page).toHaveURL(/emails\/edit/);
 
+    // a plan with an email quota limit gives its max instead of unlimited
+    const limit = (await page.locator('body').innerText()).match(/Maximum allowed:\s*([\d.]+)\s*([BKMGT])/i);
+    const expected = limit
+      ? new RegExp(`\\/\\s*${Number(limit[1])}(?:\\.0)?${limit[2].toUpperCase()}\\s*\\)`, 'i')
+      : /\/\s*~\s*\)/;
+
     const quotaInput = page.locator('input[name="gb"]');
     const quotaFormat = page.locator('select[name="format"]');
 
@@ -376,10 +382,7 @@ test.describe.serial('email quota', () => {
     await expect(async () => {
       const quotaCell = await getQuotaCell(page);
 
-      await expect(quotaCell).toContainText(
-        /\/\s*~\s*\)/,
-        { timeout: 2000 }
-      );
+      await expect(quotaCell).toContainText(expected, { timeout: 2000 });
     }).toPass({
       timeout: 60000,
       intervals: [5000],

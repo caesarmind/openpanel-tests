@@ -13,7 +13,6 @@ if (!BASE_URL) {
   throw new Error('BASE_URL must be set in .env');
 }
 
-const SESSION = '.auth/session.json';
 const SESSION_MODERN = '.auth/session-modern.json';
 
 // Spec files are independent of each other and run in parallel (--workers=N), tests inside a file stay in order.
@@ -58,34 +57,6 @@ export default defineConfig({
       metadata: { menuStyle: 'modern' },
       use: {
         storageState: SESSION_MODERN,
-      },
-    },
-    // classic menu (menu_style=classic), kept for legacy: same specs, menu-dependent steps branch on isModern()
-    {
-      name: 'setup-classic',
-      testMatch: /auth\.setup\.ts/,
-      teardown: 'serial-classic',
-      metadata: { menuStyle: 'classic' },
-    },
-    {
-      name: 'tests-classic',
-      testDir: './tests',
-      testMatch: /.*\.spec\.ts/,
-      testIgnore: /[\\/]serial[\\/]/,
-      dependencies: ['setup-classic'],
-      metadata: { menuStyle: 'classic' },
-      use: {
-        storageState: SESSION,
-      },
-    },
-    {
-      name: 'serial-classic',
-      testDir: './tests/serial',
-      testMatch: /.*\.spec\.ts/,
-      workers: 1,
-      metadata: { menuStyle: 'classic' },
-      use: {
-        storageState: SESSION,
       },
     },
   ],

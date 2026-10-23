@@ -247,6 +247,15 @@ test('copy file to folder', async ({ page }) => {
 test('move file', async ({ page }) => {
   await navigateToFiles(page);
 
+  // move no longer overwrites, so drop the original that the copy test left in root
+  await selectItem(page, FILE_NAME);
+  await page.locator('#deleteButton').click();
+  await page.locator('.fm-inline-skip-trash').check();
+  await page.locator('button[data-act="save"]').click();
+  await expect(
+    page.locator(`#filemanager_table tbody tr[data-file="${FILE_NAME}"]`)
+  ).toHaveCount(0);
+
   // Open destination folder
   await page.locator(
     `#filemanager_table tbody tr[data-file="${FOLDER_NAME}"] td:first-child a`
