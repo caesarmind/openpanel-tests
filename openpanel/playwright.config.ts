@@ -15,6 +15,9 @@ if (!BASE_URL) {
 
 const SESSION_MODERN = '.auth/session-modern.json';
 
+// since OpenPanel#1253 an account runs one install at a time, a second one fails with "another installation is already in progress"
+const INSTALLER_SPECS = /[\\/](drupal|joomla|matomo|mediawiki|moodle|nextcloud|opencart|prestashop|wordpress|website_builder|java|n8n|nodejs|python|ruby)\.spec\.ts$/;
+
 // Spec files are independent of each other and run in parallel (--workers=N), tests inside a file stay in order.
 // tests/serial/ holds specs that change something account-wide (stop all containers, block the runner's IP,
 // restart the webserver or MySQL, end every session, switch the UI language, enable 2FA...), which would break
@@ -42,8 +45,20 @@ export default defineConfig({
       name: 'tests',
       testDir: './tests',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: /[\\/]serial[\\/]/,
+      testIgnore: [/[\\/]serial[\\/]/, INSTALLER_SPECS],
       dependencies: ['setup'],
+      metadata: { menuStyle: 'modern' },
+      use: {
+        storageState: SESSION_MODERN,
+      },
+    },
+    // installers one at a time, next to the parallel tests
+    {
+      name: 'installers',
+      testDir: './tests',
+      testMatch: INSTALLER_SPECS,
+      dependencies: ['setup'],
+      workers: 1,
       metadata: { menuStyle: 'modern' },
       use: {
         storageState: SESSION_MODERN,

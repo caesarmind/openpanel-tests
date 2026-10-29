@@ -58,7 +58,7 @@ else
   {
     echo "=== $LABEL tests starting at $(date) ==="
 
-    npx playwright test -c openpanel/playwright.config.ts --project=tests --workers="${WORKERS:-4}" --reporter=list,html,json
+    npx playwright test -c openpanel/playwright.config.ts --project=tests --project=installers --workers="${WORKERS:-4}" --reporter=list,html,json
     TEST_STATUS=$?
 
     echo "=== $LABEL tests finished at $(date) with exit code $TEST_STATUS ==="

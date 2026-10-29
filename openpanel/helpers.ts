@@ -111,6 +111,20 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
     r => r.url().includes(`/${app}/install`) && r.request().method() === 'POST',
     { timeout },
   );
+
+  // "Latest" makes the server ask GitHub's API, 60 calls an hour per IP run out on repeated runs, so pick the newest listed version instead
+  const versionSelect = page.locator(`#${app}_version`);
+  if (await versionSelect.count()) {
+    const firstVersion = versionSelect.locator('option:not([value=""])').first();
+    try {
+      await firstVersion.waitFor({ state: 'attached', timeout: 15000 });
+      const value = await firstVersion.getAttribute('value');
+      if (value) await versionSelect.selectOption(value);
+    } catch {
+      // the list didn't load, keep Latest
+    }
+  }
+
   await page.locator('#installButton').click();
 
   const outcome = page.getByText(/installation completed|install process failed/i).first();

@@ -92,7 +92,9 @@ test('push to local repository deploys it', async ({ page }) => {
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-git-'));
   try {
-    git(dir, 'init', '-q', '-b', 'main');
+    // init -b needs git 2.28+, symbolic-ref names the branch on any version
+    git(dir, 'init', '-q');
+    git(dir, 'symbolic-ref', 'HEAD', 'refs/heads/main');
     git(dir, 'config', 'user.name', 'Playwright');
     git(dir, 'config', 'user.email', 'playwright@tests.openpanel.org');
     fs.writeFileSync(path.join(dir, 'index.html'), '<h1>deployed by git</h1>\n');

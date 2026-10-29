@@ -24,7 +24,7 @@ Playwright end-to-end tests for the OpenPanel (user) panel.
 ## Run manually
 
 ```bash
-cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --ui
+cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --project=installers --ui
 ```
 
 ## Run headlessly (parallel)
@@ -34,7 +34,7 @@ display available in cron. Spec files don't depend on each other, so they
 run in parallel; tests inside one file still run in order.
 
 ```bash
-cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --workers=4
+cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.ts --project=tests --project=installers --workers=4
 ```
 
 - Adding a domain restarts the webserver and recreates php-fpm and the
@@ -42,7 +42,7 @@ cd /root/playwright-test && npx playwright test -c openpanel/playwright.config.t
   step adds every domain the suite uses (`SUITE_DOMAINS` in `helpers.ts`)
   before the parallel tests start. Each spec still calls `ensureDomains()` for
   its own domain, so any spec can also run on its own, e.g.
-  `npx playwright test -c openpanel/playwright.config.ts --project=tests tests/wordpress.spec.ts`.
+  `npx playwright test -c openpanel/playwright.config.ts --project=installers tests/wordpress.spec.ts`.
   Domains are added one at a time (a lock in the OS temp dir).
 - Specs that change something for the whole account (add/delete domains,
   stop all containers, block the runner's IP, restart the webserver or MySQL,
