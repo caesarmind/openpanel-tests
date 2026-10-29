@@ -320,21 +320,22 @@ start_openpanel_container() {
   local ip="$1"
   local os="$2"
 
-  os_log "$os" "Starting openpanel container via podman compose on $ip..."
+  os_log "$os" "Starting openpanel container via podman-compose on $ip..."
 
   local out
-  out=$(/usr/bin/ssh -i "$SSH_PRIVATE_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o LogLevel=ERROR root@"$ip" "cd /root && podman compose up openpanel -d" 2>&1)
+  # podman-compose, which the installer sets up on every OS: Debian 12's podman 4.3 has no `podman compose` subcommand (added in 4.7), so it exited 125 there
+  out=$(/usr/bin/ssh -i "$SSH_PRIVATE_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o LogLevel=ERROR root@"$ip" "cd /root && podman-compose up -d openpanel" 2>&1)
   local rc=$?
   {
     echo "----- PODMAN COMPOSE OUTPUT -----"
     echo "$out"
     echo "----- PODMAN COMPOSE EXIT CODE: $rc -----"
   } >> "$RUN_DIR/${os}.log"
-  os_log "$os" "podman compose exit code: $rc"
+  os_log "$os" "podman-compose exit code: $rc"
 
   if [[ $rc -ne 0 ]]; then
-    os_log "$os" "ERROR: podman compose up openpanel failed on $ip"
-    send_discord "❌ [$os] podman compose up openpanel failed on $ip"
+    os_log "$os" "ERROR: podman-compose up -d openpanel failed on $ip"
+    send_discord "❌ [$os] podman-compose up -d openpanel failed on $ip"
     return 1
   fi
 
