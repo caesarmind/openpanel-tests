@@ -17,6 +17,14 @@ async function navigateToPostgreSQLPage(page: any) {
   await waitForPostgres(page);
 }
 
+// a fresh account installs PostgreSQL in the background on the first visit, /postgresql/new sends you back to the list until it's ready
+async function openNewDatabaseForm(page: any) {
+  await expect(async () => {
+    await page.goto('/postgresql/new');
+    await expect(page.getByRole('textbox', { name: 'Database Name' })).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 8 * 60_000, intervals: [10_000] });
+}
+
 async function expectDatabaseInTable(page: any, dbName: string) {
   const row = page.locator('tr', { hasText: dbName });
   await expect(row).toBeVisible();
@@ -49,11 +57,12 @@ test('list databases', async ({ page }) => {
 
 
 test('create database', async ({ page }) => {
-  // the first page load waits for a fresh account's PostgreSQL to start
-  test.setTimeout(3 * 60_000);
-  await deleteRowIfExists(page, '/postgresql', 'stefan_psql');
+  // the first page load waits for a fresh account's PostgreSQL to be installed and started
+  test.setTimeout(10 * 60_000);
   await navigateToPostgreSQLPage(page);
-  await page.getByRole('link', { name: 'New Database' }).click();
+  await openNewDatabaseForm(page);
+  await deleteRowIfExists(page, '/postgresql', 'stefan_psql');
+  await openNewDatabaseForm(page);
   await page.getByRole('textbox', { name: 'Database Name' }).fill('stefan_psql');
   await page.getByRole('button', { name: 'Create Database' }).click();
   await expect(page.locator('body')).toContainText(/successfully created/i, { timeout: 25000 });

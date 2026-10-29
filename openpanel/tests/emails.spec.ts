@@ -977,9 +977,14 @@ test('default address — set and clear catch-all', async ({ page }) => {
 
   const destination = `catchall-pw-test@${domain}`;
 
-  // Set catch-all.
+  // Set catch-all, the save can take a few seconds and reloading before it answers would drop it
   await destinationInput.fill(destination);
+  const saved = page.waitForResponse(
+    r => r.url().includes(`/emails/default/${encodeURIComponent(domain)}`) && r.request().method() === 'POST',
+    { timeout: 60_000 },
+  );
   await saveButton.click();
+  expect((await saved).ok(), 'catch-all save request failed').toBe(true);
 
   /*
    * The save operation may update the page through JavaScript rather than
@@ -1003,7 +1008,7 @@ test('default address — set and clear catch-all', async ({ page }) => {
 
   await expect(
     page.getByText(/no catch-all configured/i)
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: 60_000 });
 
   await expect(destinationInput).toHaveValue('');
 });
