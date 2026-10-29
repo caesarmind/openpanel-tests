@@ -232,12 +232,13 @@ for (const service of services) {
     // wait for the save, otherwise the page below can still run the previous service's script
     await expect(page.getByText(/saved|success/i).first()).toBeVisible();
     const testUrl = `https://${domain}/cache_connection_test_${service.name}.php?nocache=${Math.floor(Math.random() * 100_000)}`;
-    // apache resolves php-fpm per request and a lookup can miss while podman's dns reloads after a container change
+    // the webserver resolves php-fpm per request and a lookup can miss while podman's dns reloads after a container change
     let body: string | null = '';
     for (let i = 0; i < 6; i++) {
       await page.goto(testUrl);
       body = await page.locator('body').textContent();
-      if (!body?.includes('Proxy Error')) break;
+      // apache shows Proxy Error, nginx 502 Bad Gateway
+      if (!body?.includes('Proxy Error') && !body?.includes('Bad Gateway')) break;
       await page.waitForTimeout(5000);
     }
     const expectedOk = `${service.name.toUpperCase()}_OK`;

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
 import { ensureDomains, runInstaller } from '../helpers';
+import { currentWebserver } from '../webserver';
 
 const DOMAIN = 'moodle.tests.openpanel.org';
 
@@ -37,7 +38,7 @@ test.describe('Moodle autoinstaller', () => {
   });
 
   test('3. verify app is responding', async ({ page }) => {
-    test.skip(true, 'https://github.com/stefanpejcic/OpenPanel/issues/1206 Apache refuses the docroot symlink');
+    test.skip(await currentWebserver(page) === 'apache', 'https://github.com/stefanpejcic/OpenPanel/issues/1206 Apache refuses the docroot symlink');
     const url = `https://${DOMAIN}/`;
     await page.goto(url);
 
