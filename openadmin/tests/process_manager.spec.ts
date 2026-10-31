@@ -14,14 +14,15 @@ test.describe('processes table', () => {
     const initialCount = await rows.count();
 
     await searchInput.fill('testinguser');
-    await expect(rows.first()).toContainText('testinguser');
+    await expect.poll(async () => ((await rows.first().innerHTML()).includes('testinguser'))).toBe(true);
 
     const testingUserCount = await rows.count();
     console.log(`search testinguser: ${testingUserCount}`);
     expect(testingUserCount).not.toBe(initialCount);
 
     await searchInput.fill('cron');
-    await expect(rows.first()).toContainText('cron');
+    // the match can be in the full command the cell cuts short
+    await expect.poll(async () => ((await rows.first().innerHTML()).toLowerCase().includes('cron'))).toBe(true);
 
     const cronCount = await rows.count();
     console.log(`search cron: ${cronCount}`);
@@ -42,11 +43,16 @@ test.describe('processes table', () => {
       { name: 'Command', asc: 'command', desc: '-command' },
     ];
 
-    const getColumnValues = async (colIndex: number) => {
+    const getColumnValues = async (name: string) => {
       // sorting re-navigates the page; wait for the table to repopulate
       // before reading values, otherwise we can read it mid-reload.
       await expect(table.locator('tbody tr').first()).toBeVisible();
-      return table.locator(`tbody tr td:nth-child(${colIndex + 1})`).allInnerTexts();
+      // the checkbox and Server columns shift things, so find the column by its header
+      const heads = (await table.locator('thead th:visible').allInnerTexts()).map(h => h.replace(/\s+/g, ' ').trim());
+      const idx = heads.findIndex(h => h === name || h.startsWith(name + ' '));
+      const texts = await table.locator(`tbody tr td:nth-child(${idx + 1})`).allInnerTexts();
+      // the Pid cell also holds the Trace and Kill links
+      return name === 'Pid' ? texts.map(t => (t.match(/\d+/) || [''])[0]) : texts;
     };
 
     const normalize = (vals: string[]) =>
@@ -59,12 +65,12 @@ test.describe('processes table', () => {
       await header.locator(`a[href*="sort=${col.asc}"]`).click();
       await expect(page).toHaveURL(new RegExp(`sort=${col.asc}`));
 
-      const asc = normalize(await getColumnValues(i));
+      const asc = normalize(await getColumnValues(col.name));
 
       await header.locator(`a[href*="sort=${col.desc}"]`).click();
       await expect(page).toHaveURL(new RegExp(`sort=${col.desc}`));
 
-      const desc = normalize(await getColumnValues(i));
+      const desc = normalize(await getColumnValues(col.name));
 
       console.log(`[${col.name}] asc: ${asc[0]} → ${asc.at(-1)}, desc: ${desc[0]} → ${desc.at(-1)}`);
 
@@ -82,20 +88,26 @@ test.describe('processes table', () => {
     await userRow.getByRole('link', { name: 'Trace' }).click();
 
     await expect(page).toHaveURL(/\/server\/processes\/\d+\/strace/);
+    // the output streams in, wait for either result first
+    await expect(page.locator('body')).toContainText(/attached|strace is not installed/, { timeout: 15_000 });
+    test.skip(await page.getByText('strace is not installed on this server').isVisible(), 'strace is not installed on this server');
     await expect(page.locator('body')).toContainText(
       /strace:\s*Process\s+\d+\s+attached/
     );
   });
 
 test('kill', async ({ page }) => {
+  // only a throwaway sleep, killing systemd --user or httpd would take the account's containers down
   const userRow = page
     .locator('#processes_table tbody tr', { hasText: 'testinguser' })
+    .filter({ hasText: /\ssleep\s/ })
     .first();
+  test.skip(await userRow.count() === 0, 'No sleep process of testinguser to kill');
 
   await expect(userRow).toBeVisible();
 
-  // Extract only the numeric PID from the first cell.
-  const pidCellText = await userRow.locator('td').first().innerText();
+  // the checkbox is the first cell, the PID is in the second
+  const pidCellText = await userRow.locator('td').nth(1).innerText();
   const pidMatch = pidCellText.match(/\d+/);
 
   expect(pidMatch).not.toBeNull();
@@ -110,7 +122,7 @@ test('kill', async ({ page }) => {
 
   // Verify that exact PID no longer exists in the PID column.
   await expect(
-    page.locator('#processes_table tbody tr td:first-child').filter({
+    page.locator('#processes_table tbody tr td:nth-child(2)').filter({
       hasText: new RegExp(`^\\s*${pid}\\s*$`),
     })
   ).toHaveCount(0);

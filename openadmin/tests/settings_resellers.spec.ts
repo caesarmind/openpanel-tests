@@ -35,14 +35,16 @@ test('create a new reseller', async ({ page }) => {
 test('edit plans & limits link navigates to update page', async ({ page }) => {
   await page.goto('/resellers');
 
-  const rows = page.locator('#exiting_users tbody tr');
-  const count = await rows.count();
-  test.skip(count === 0, 'No resellers to inspect');
+  const menuBtn = page.locator('#exiting_users tbody tr:not([data-cluster-node]) button.account-menu-btn').first();
+  test.skip(await menuBtn.count() === 0, 'No resellers to inspect');
 
-  const username = (await rows.first().locator('td').nth(0).innerText()).trim();
-  await rows.first().locator('button[data-dropdown-toggle]').click();
+  const username = (await menuBtn.getAttribute('data-user'))!;
+  // scroll first, account_menu.js closes the menu on any scroll and Playwright scrolls smoothly while clicking
+  await menuBtn.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await menuBtn.click();
 
-  const dropdown = page.locator(`#dropdown-${username}`);
+  const dropdown = page.locator('#account-menu');
   await expect(
     dropdown.getByRole('link', { name: 'Edit Plans & Limits' })
   ).toHaveAttribute('href', `/resellers/update/${username}`);
@@ -53,22 +55,22 @@ test('edit plans & limits link navigates to update page', async ({ page }) => {
 test('delete reseller (runs last)', async ({ page }) => {
   await page.goto('/resellers');
 
-  const rows = page.locator('#exiting_users tbody tr');
-  const count = await rows.count();
-  test.skip(count === 0, 'No resellers to delete');
+  // only ever delete a reseller this suite created
+  const menuBtn = page.locator('#exiting_users tbody tr:not([data-cluster-node]) button.account-menu-btn[data-user^="tstreseller"]').first();
+  test.skip(await menuBtn.count() === 0, 'No resellers to delete');
 
-  const username = (await rows.first().locator('td').nth(0).innerText()).trim();
+  const username = (await menuBtn.getAttribute('data-user'))!;
+  // scroll first, account_menu.js closes the menu on any scroll and Playwright scrolls smoothly while clicking
+  await menuBtn.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await menuBtn.click();
 
-  await rows.first().locator('button[data-dropdown-toggle]').click();
-
-  const dropdown = page.locator(`#dropdown-${username}`);
+  const dropdown = page.locator('#account-menu');
   await expect(dropdown).toBeVisible();
 
   await dropdown.getByRole('button', { name: 'Delete' }).click();
 
-  await expect(
-    page.locator('#exiting_users tbody tr').filter({ hasText: username })
-  ).toHaveCount(0);
+  await expect(page.locator(`button.account-menu-btn[data-user="${username}"]`)).toHaveCount(0);
 
   console.log(`deleted reseller "${username}"`);
 });

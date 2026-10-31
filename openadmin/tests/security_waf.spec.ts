@@ -5,9 +5,9 @@ test('waf settings page loads with status select and active/total badge', async 
   await expect(page).toHaveURL(/security\/waf/);
 
   await expect(page.locator('#status')).toBeVisible();
-  const sets = page.locator('div.sm\\:flex.sm\\:items-center:has(span:text("Active:"))');
-  await expect(sets.locator('span').nth(0)).toHaveText('Active:');
-  await expect(sets.locator('span').nth(1)).toHaveText(/\d+\s*\/\s*\d+/);
+  // overview cards show "Rule sets" with active / total
+  await expect(page.getByText('Rule sets', { exact: true })).toBeVisible();
+  await expect(page.getByText(/^\s*\d+\s*\/\s*\d+\s*$/).first()).toBeVisible();
   await expect(page.locator('#tour-waf-manage-rules')).toBeVisible();
 
   console.log('waf settings page loaded');
@@ -25,15 +25,15 @@ test('manage rules link navigates to waf rules page', async ({ page }) => {
 test('search filters waf rule sets table', async ({ page }) => {
   await page.goto('/security/waf/rules');
 
-  const rows = page.locator('#waf_sets tbody tr');
+  const rows = page.locator('#waf_sets tbody tr').filter({ hasText: /(REQUEST|RESPONSE)-/ });
   const count = await rows.count();
   test.skip(count === 0, 'No WAF rule sets detected on this environment');
 
-  const firstName = (await rows.first().locator('td').first().innerText()).trim();
+  const firstName = (await rows.first().innerText()).match(/(REQUEST|RESPONSE)-[A-Z0-9-]+/)![0];
   await page.locator('input[x-model="searchQuery"]').fill(firstName);
   await page.waitForTimeout(150);
 
-  await expect(rows.filter({ hasText: firstName })).toBeVisible();
+  await expect(rows.filter({ hasText: firstName }).first()).toBeVisible();
 
   console.log(`search filtered waf rule sets to "${firstName}"`);
 });
@@ -58,15 +58,16 @@ test('view rule set opens raw rules in new tab', async ({ page, context }) => {
 test('toggle a rule set enable/disable and revert', async ({ page }) => {
   await page.goto('/security/waf/rules');
 
-  const rows = page.locator('#waf_sets tbody tr');
+  // the required set has no toggle button
+  const rows = page.locator('#waf_sets tbody tr').filter({ has: page.getByRole('button', { name: /^(Enable|Disable)$/ }) });
   const count = await rows.count();
   test.skip(count === 0, 'No WAF rule sets detected on this environment');
 
   const row = rows.first();
 
-  const ruleName = await row.locator('td').first().innerText();
+  const ruleName = (await row.innerText()).match(/(REQUEST|RESPONSE)-[A-Z0-9-]+/)![0];
 
-  const button = row.getByRole('button');
+  const button = row.getByRole('button', { name: /^(Enable|Disable)$/ });
   const initialButtonText = (await button.innerText()).trim();
 
   await button.click();
@@ -74,7 +75,7 @@ test('toggle a rule set enable/disable and revert', async ({ page }) => {
 
   const sameRow = page.locator('#waf_sets tbody tr').filter({ hasText: ruleName });
 
-  const sameButton = sameRow.getByRole('button');
+  const sameButton = sameRow.getByRole('button', { name: /^(Enable|Disable)$/ });
 
   await expect(sameButton).not.toHaveText(initialButtonText);
 

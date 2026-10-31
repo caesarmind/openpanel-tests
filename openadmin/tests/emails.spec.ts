@@ -116,7 +116,7 @@ test('emails accounts webmail link present per row', async ({ page }) => {
   const rows = table
     .locator('tbody tr')
     .filter({
-      has: table.locator('a[href^="/emails/webmail/"]'),
+      has: page.locator('a[href^="/emails/webmail/"]'),
     });
 
   const count = await rows.count();
@@ -201,7 +201,7 @@ test('emails queue bulk actions visible when messages exist', async ({ page }) =
 
   const retryAllBtn = page.getByRole('button', { name: /retry all/i });
   const deleteAllBtn = page.getByRole('button', { name: /delete all/i });
-  const emptyQueue = page.getByText('Queue is empty.', { exact: true });
+  const emptyQueue = page.getByText(/^(Queue is empty\.|Nothing here\.)$/);
   const mailserverNotInstalled = page.getByText(
     'opencli email-server install',
     { exact: false }
@@ -340,7 +340,7 @@ test('email rate limits page loads', async ({ page }) => {
 test('email rate limits shows rules table or empty state', async ({ page }) => {
   await page.goto('/emails/domain-limits');
 
-  const table      = page.locator('table#exiting_users');
+  const table      = page.locator('table#domain_limits_table');
   const emptyState = page.getByText('No rate-limit rules configured');
 
   const hasTable = await table.isVisible().catch(() => false);
@@ -353,9 +353,7 @@ test('email rate limits search input filters rows', async ({ page }) => {
   await page.goto('/emails/domain-limits');
   await expect(page).toHaveURL(/\/emails\/domain-limits/);
 
-  const searchInput = page.getByRole('searchbox', {
-    name: 'Filter domain / user…',
-  });
+  const searchInput = page.getByPlaceholder('Search domains or users...');
 
   await expect(searchInput).toBeVisible();
 
@@ -424,7 +422,7 @@ test('email rate limits edit pencil opens inline input', async ({ page }) => {
   const firstRow = rows.first();
   await expect(firstRow).toBeVisible();
 
-  const editBtn = firstRow.locator('button[title="Edit limit"]');
+  const editBtn = firstRow.getByRole('button', { name: 'Edit', exact: true });
   await expect(editBtn).toBeVisible();
 
   await editBtn.click();

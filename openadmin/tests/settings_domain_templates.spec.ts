@@ -10,11 +10,11 @@ const testConfigs = [
   { url: '/domains/file-templates', id: 'default_page', name: 'Default Page', restoreIndex: 0 },
   { url: '/domains/file-templates', id: 'suspended_website', name: 'Suspended Website', restoreIndex: 1 },
   { url: '/domains/file-templates', id: 'suspended_user', name: 'Suspended User', restoreIndex: 2 },
-  { url: '/domains/file-templates', id: 'docker_apache_domain', name: 'Apache VHost', restoreIndex: 3 },
-  { url: '/domains/file-templates', id: 'docker_nginx_domain', name: 'Nginx VHost', restoreIndex: 4 },
-  { url: '/domains/file-templates', id: 'docker_openresty_domain', name: 'OpenResty VHost', restoreIndex: 5 },
-  { url: '/domains/file-templates', id: 'docker_varnish', name: 'Varnish Template', restoreIndex: 6 },
-  { url: '/domains/file-templates', id: 'docker_caddy', name: 'Caddy VHosts', restoreIndex: 7 },
+  { url: '/domains/vhost-templates', id: 'docker_apache_domain', name: 'Apache VHost', restoreIndex: 0 },
+  { url: '/domains/vhost-templates', id: 'docker_nginx_domain', name: 'Nginx VHost', restoreIndex: 1 },
+  { url: '/domains/vhost-templates', id: 'docker_openresty_domain', name: 'OpenResty VHost', restoreIndex: 2 },
+  { url: '/domains/vhost-templates', id: 'docker_varnish', name: 'Varnish Template', restoreIndex: 3 },
+  { url: '/domains/vhost-templates', id: 'docker_caddy', name: 'Caddy VHosts', restoreIndex: 4 },
 ];
 
 for (const config of testConfigs) {

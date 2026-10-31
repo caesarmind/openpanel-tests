@@ -40,6 +40,8 @@ test('configuration tab restores and saves the default backup.env', async ({ pag
   await page.goto('/backups/user#configuration');
   await page.getByRole('tab', { name: 'Configuration' }).click();
 
+  // the raw backup.env sits behind the Advanced toggle, the tab opens on the form
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
   const textarea = page.locator('#backup_env');
   await expect(textarea).toBeVisible();
 
@@ -52,8 +54,8 @@ test('configuration tab restores and saves the default backup.env', async ({ pag
     expect(value.length).toBeGreaterThan(0);
   }).toPass({ timeout: 10000 });
 
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('alert')).toContainText(/Saved/);
+  await page.locator('form:has(#backup_env)').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/Saved/);
 
   console.log('configuration tab restored default backup.env and saved it');
 });

@@ -9,21 +9,22 @@ test('custom code page loads with save button', async ({ page }) => {
   console.log('custom code page loaded');
 });
 
+// pagespeed key, forbidden usernames and restricted domains live on the OpenPanel settings page now
 test('pagespeed api key field edits and saves', async ({ page }) => {
-  await page.goto('/settings/custom-code');
+  await page.goto('/settings/open-panel');
 
   const input = page.locator('#pagespeed_api_key');
   const original = await input.inputValue();
   const testValue = `test-key-${Date.now()}`;
 
   await input.fill(testValue);
-  await page.getByRole('button', { name: 'Save Files' }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForLoadState();
   await expect(page.locator('#pagespeed_api_key')).toHaveValue(testValue);
 
   // revert
   await page.locator('#pagespeed_api_key').fill(original);
-  await page.getByRole('button', { name: 'Save Files' }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForLoadState();
   await expect(page.locator('#pagespeed_api_key')).toHaveValue(original);
 
@@ -33,7 +34,7 @@ test('pagespeed api key field edits and saves', async ({ page }) => {
 // Enterprise-only sections (custom_css/js/header/footer/howto_guides/custom_section)
 const enterpriseTextareas = ['custom_css', 'custom_js', 'in_header', 'in_footer', 'howto_guides', 'custom_section'];
 // available regardless of license
-const commonTextareas = ['wp_plugins', 'wp_themes', 'forbidden_usernames', 'restricted_domains', 'post_update', 'pre_startup'];
+const commonTextareas = ['wp_plugins', 'wp_themes', 'post_update', 'pre_startup'];
 
 for (const name of commonTextareas) {
   test(`edit, save, and revert "${name}" textarea`, async ({ page }) => {
@@ -85,8 +86,31 @@ for (const name of enterpriseTextareas) {
   });
 }
 
+for (const name of ['forbidden_usernames', 'restricted_domains']) {
+  test(`edit, save, and revert "${name}" on OpenPanel settings`, async ({ page }) => {
+    await page.goto('/settings/open-panel');
+
+    const textarea = page.locator(`#${name}`);
+    const original = await textarea.inputValue();
+    const comment = `\n# test-comment-${Date.now()}`;
+
+    await textarea.fill(original + comment);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.waitForLoadState();
+    await expect(page.locator(`#${name}`)).toHaveValue(new RegExp(comment.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+    // revert
+    await page.locator(`#${name}`).fill(original);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.waitForLoadState();
+    await expect(page.locator(`#${name}`)).toHaveValue(original);
+
+    console.log(`"${name}" edited, saved, and reverted`);
+  });
+}
+
 test('restore default fetches content into a textarea', async ({ page }) => {
-  await page.goto('/settings/custom-code');
+  await page.goto('/settings/open-panel');
 
   const textarea = page.locator('#forbidden_usernames');
   const original = await textarea.inputValue();

@@ -8,7 +8,11 @@ test('create domain', async ({ page }) => {
 
   await page.locator('#domain').fill('example.test.rs');
   await page.locator('#username').fill('testinguser');
-  await page.getByRole('listitem').filter({ hasText: 'testinguser' }).click();
+  // aa-users deletes testinguser at its end, and on a cluster master other servers' users show as "name (server)"
+  const owner = page.getByRole('listitem').filter({ hasText: /^\s*testinguser\s*$/ });
+  await page.waitForTimeout(1_500);
+  test.skip((await owner.count()) === 0, 'testinguser does not exist on this server');
+  await owner.first().click();
 
   await page.getByRole('button', { name: 'Add Domain' }).click();
 

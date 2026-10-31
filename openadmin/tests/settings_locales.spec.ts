@@ -11,7 +11,7 @@ test('locales page loads with table', async ({ page }) => {
 test('search filters the locales table', async ({ page }) => {
   await page.goto('/settings/locales');
 
-  const rows = page.locator('#tour-locales-table tbody tr');
+  const rows = page.locator('#tour-locales-table tbody tr:not([data-cluster-node])');
   const count = await rows.count();
   test.skip(count === 0, 'No locales available on this environment');
 
@@ -26,19 +26,23 @@ test('search filters the locales table', async ({ page }) => {
 test('set a different installed locale as default, then revert', async ({ page }) => {
   await page.goto('/settings/locales');
 
-  const setDefaultButtons = page.getByRole('button', { name: 'Set as Default' });
+  // rows of other cluster members are left out, the change is made on this server
+  const setDefaultButtons = page.locator('#tour-locales-table tbody tr:not([data-cluster-node])').getByRole('button', { name: 'Set as Default' });
   const count = await setDefaultButtons.count();
   test.skip(count === 0, 'Only one (or zero) installed locale available');
 
-  const rows = page.locator('#tour-locales-table tbody tr');
+  const rows = page.locator('#tour-locales-table tbody tr:not([data-cluster-node])');
 
   // Find default row specifically by matching exact 'Default' badge text in the cell
   const defaultRow = rows.filter({
     has: page.getByText('Default', { exact: true })
   });
-  const originalLocale = (await defaultRow.locator('td').nth(1).innerText()).trim();
+  // the code like en-us is the one exact thing in the row, column positions move with the checkbox and Server columns
+  const originalLocale = ((await defaultRow.first().innerText()).match(/\b[a-z]{2}-[a-z]{2}\b/) || [''])[0];
+  expect(originalLocale).not.toBe('');
 
   const firstNonDefaultButton = setDefaultButtons.first();
+  test.skip((await setDefaultButtons.count()) === 0, 'Only one installed locale on this server');
   await firstNonDefaultButton.click();
 
   // Assert that the original locale row no longer has the 'Default' badge
@@ -49,7 +53,8 @@ test('set a different installed locale as default, then revert', async ({ page }
   // Find the "Set as Default" button for the original locale row
   const restoreButton = rows
     .filter({ hasText: originalLocale })
-    .getByRole('button', { name: 'Set as Default' });
+    .getByRole('button', { name: 'Set as Default' })
+    .first();
 
   await expect(restoreButton).toBeVisible();
   await restoreButton.click();

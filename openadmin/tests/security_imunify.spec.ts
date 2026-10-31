@@ -13,7 +13,7 @@ test('imunify page renders the branch matching current service state', async ({ 
   const iframe = page.locator('iframe#myiframe');
 
   if (await notInstalled.isVisible().catch(() => false)) {
-    await expect(page.getByText('opencli imunify install')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Install ImunifyAV/ }).or(page.getByText('opencli imunify install')).first()).toBeVisible();
     console.log('imunify: not installed branch rendered correctly');
   } else if (await notRunning.isVisible().catch(() => false)) {
     await expect(page.getByText('opencli imunify start')).toBeVisible();

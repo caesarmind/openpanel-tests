@@ -11,7 +11,7 @@ test('administrators page loads with table', async ({ page }) => {
 test('search filters the administrators table', async ({ page }) => {
   await page.goto('/administrators');
 
-  const rows = page.locator('#exiting_users tbody tr');
+  const rows = page.locator('#exiting_users tbody tr:not([data-cluster-node])');
   const count = await rows.count();
   test.skip(count === 0, 'No administrators to search');
 
@@ -42,9 +42,10 @@ test('create, inspect, and delete a new administrator (Enterprise only)', async 
   // still hard-enforces a single-administrator limit on non-Enterprise
   // licenses -- treat that as an expected, environment-specific outcome.
   const licenseLimitError = page.getByText(/only one administrator account/i);
-  const row = page.locator('#exiting_users tbody tr').filter({ hasText: testUsername });
+  // one menu button per row carries the username, that's the exact match
+  const row = page.locator('#exiting_users tbody tr:not([data-cluster-node])').filter({ has: page.locator(`button.account-menu-btn[data-user="${testUsername}"]`) });
 
-  await expect(row.or(licenseLimitError)).toBeVisible({ timeout: 15_000 });
+  await expect(row.or(licenseLimitError).first()).toBeVisible({ timeout: 15_000 });
 
   test.skip(
     await licenseLimitError.isVisible().catch(() => false),
@@ -56,12 +57,15 @@ test('create, inspect, and delete a new administrator (Enterprise only)', async 
   await expect(row.getByText('Admin', { exact: true })).toBeVisible();
 
   // delete the test administrator we just created
-  await row.locator('button[data-dropdown-toggle]').click();
-  const dropdown = page.locator(`#dropdown-${testUsername}`);
+  // scroll first, account_menu.js closes the menu on any scroll and Playwright scrolls smoothly while clicking
+  await row.locator('button.account-menu-btn').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await row.locator('button.account-menu-btn').click();
+  const dropdown = page.locator('#account-menu');
   await expect(dropdown).toBeVisible();
   await dropdown.getByRole('button', { name: 'Delete' }).click();
 
-  await expect(page.locator('#exiting_users tbody tr').filter({ hasText: testUsername })).toHaveCount(0);
+  await expect(page.locator(`button.account-menu-btn[data-user="${testUsername}"]`)).toHaveCount(0);
   console.log(`created and deleted test administrator "${testUsername}"`);
 });
 
@@ -69,13 +73,16 @@ test('rename and change-password links navigate to dedicated pages', async ({ pa
   await page.goto('/administrators');
 
   // Target a row that has an edit action button
-  const rowWithActions = page.locator('#exiting_users tbody tr').filter({has: page.locator('button[data-dropdown-toggle]')}).first();
-  test.skip(await rowWithActions.count() === 0, 'No editable administrators available');
+  const menuBtn = page.locator('#exiting_users tbody tr:not([data-cluster-node]) button.account-menu-btn').first();
+  test.skip(await menuBtn.count() === 0, 'No editable administrators available');
 
-  const username = (await rowWithActions.locator('td').first().innerText()).trim();
-  await rowWithActions.locator('button[data-dropdown-toggle]').click();
+  const username = (await menuBtn.getAttribute('data-user'))!;
+  // scroll first, account_menu.js closes the menu on any scroll and Playwright scrolls smoothly while clicking
+  await menuBtn.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await menuBtn.click();
 
-  const dropdown = page.locator(`#dropdown-${username}`);
+  const dropdown = page.locator('#account-menu');
   await expect(dropdown.getByRole('link', { name: 'Rename' })).toHaveAttribute('href', `/administrators/rename/${username}`);
   await expect(dropdown.getByRole('link', { name: 'Change Password' })).toHaveAttribute('href', `/administrators/password/${username}`);
 

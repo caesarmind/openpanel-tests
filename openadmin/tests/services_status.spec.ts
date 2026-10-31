@@ -13,7 +13,7 @@ test('services page lists services with search and edit-services link', async ({
 test('search filters the services table', async ({ page }) => {
   await page.goto('/services');
 
-  const rows = page.locator('#exiting_users tbody tr');
+  const rows = page.locator('#exiting_users tbody tr:not([data-cluster-node])');
   const count = await rows.count();
   test.skip(count === 0, 'No services detected on this environment');
 
@@ -22,7 +22,7 @@ test('search filters the services table', async ({ page }) => {
   await page.locator('input[x-model="searchQuery"]').fill(firstName);
   await page.waitForTimeout(150);
 
-  await expect(rows.filter({ hasText: firstName })).toBeVisible();
+  await expect(rows.filter({ hasText: firstName }).first()).toBeVisible();
 
   console.log(`search filtered services table to "${firstName}"`);
 });
@@ -34,7 +34,8 @@ test('each service row exposes start/stop and restart actions', async ({ page })
   const headers = table.locator('thead th');
   const headerTexts = await headers.allInnerTexts();
   const realNameIdx = headerTexts.findIndex(h => h.trim() === 'Real Name');
-  expect(realNameIdx).toBeGreaterThanOrEqual(0);
+  // a cluster master shows one row per service with a column per server, the real name sits under the service name
+  const pivot = realNameIdx < 0;
 
   const rows = table.locator('tbody tr');
   const count = await rows.count();
@@ -46,18 +47,24 @@ test('each service row exposes start/stop and restart actions', async ({ page })
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
 
-    const realName = (await row.locator('td').nth(realNameIdx).innerText()).trim();
+    const realName = pivot
+      ? ((await row.locator('td span.block.text-xs').first().innerText().catch(() => '')).split('·')[0] || '').trim()
+      : (await row.locator('td').nth(realNameIdx).innerText()).trim();
     if (!realName) continue;
 
     const startBtn = row.getByRole('button', { name: new RegExp(`Start ${realName}`, 'i') });
     const stopBtn = row.getByRole('button', { name: new RegExp(`Stop ${realName}`, 'i') });
-    const restartBtn = row.getByRole('button', { name: new RegExp(`Restart ${realName}`, 'i') });
+    const restartBtn = row.getByRole('button', { name: new RegExp(`^Restart ${realName}$`, 'i') });
 
     const hasStartOrStop =
       (await startBtn.count()) > 0 || (await stopBtn.count()) > 0;
 
     if (hasStartOrStop) {
-      await expect(restartBtn).toHaveCount(1);
+      if (pivot) {
+        expect(await restartBtn.count()).toBeGreaterThanOrEqual(1);
+      } else {
+        await expect(restartBtn).toHaveCount(1);
+      }
       foundAtLeastOne = true;
     }
   }

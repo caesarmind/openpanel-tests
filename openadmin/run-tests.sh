@@ -40,6 +40,12 @@ if [ -f "$REPO_DIR/.env" ]; then
   set +a
 fi
 
+# a slave in openadmin/.env adds a second run of every spec on it
+SLAVE_PROJECT=""
+if grep -qE '^SLAVE_URL="?[^"[:space:]]' "$PROJECT_DIR/.env" 2>/dev/null; then
+  SLAVE_PROJECT="--project=tests-slave"
+fi
+
 # keep each run's HTML report separate instead of overwriting the last one
 export PLAYWRIGHT_HTML_REPORT="$LOG_DIR/html-report-openadmin-${TIMESTAMP}"
 export PLAYWRIGHT_HTML_OPEN=never
@@ -56,7 +62,7 @@ else
   {
     echo "=== $LABEL tests starting at $(date) ==="
 
-    npx playwright test -c openadmin/playwright.config.ts --project=tests --workers=1 --reporter=list,html,json
+    npx playwright test -c openadmin/playwright.config.ts --project=tests ${SLAVE_PROJECT:-} --workers=1 --reporter=list,html,json
     TEST_STATUS=$?
 
     echo "=== $LABEL tests finished at $(date) with exit code $TEST_STATUS ==="

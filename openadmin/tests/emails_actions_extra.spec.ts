@@ -5,18 +5,33 @@ async function firstEmailRow(page) {
   const table = page.locator('table').filter({ has: page.locator('thead') }).first();
   const visible = await table.isVisible().catch(() => false);
   if (!visible) return null;
-  const rows = page.locator('tbody tr').filter({ has: page.locator('button[type="button"]') });
+  const rows = page.locator('tbody tr').filter({ has: page.locator('button[aria-label^="Actions for"]') });
   const count = await rows.count();
   if (count === 0) return null;
   return rows.first();
+}
+
+// every row shares one menu, the row button carries the address in its label
+async function openRowMenu(page, row) {
+  const btn = row.locator('button[aria-label^="Actions for"]');
+  // the menu closes on scroll, so get the button in view before clicking
+  await btn.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await btn.click();
+  const menu = page.locator('[x-ref="menu"]');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+async function rowEmail(row) {
+  return ((await row.locator('button[aria-label^="Actions for"]').getAttribute('aria-label')) || '').replace('Actions for ', '');
 }
 
 test('per-row actions dropdown exposes password/quota/restrict/delete', async ({ page }) => {
   const row = await firstEmailRow(page);
   test.skip(!row, 'No email accounts available on this environment');
 
-  await row!.locator('button[type="button"]').last().click();
-  const menu = row!.locator('ul[aria-labelledby]');
+  const menu = await openRowMenu(page, row!);
   await expect(menu.getByText('Change Password')).toBeVisible();
   await expect(menu.getByText('Set Quota')).toBeVisible();
   await expect(menu.getByText('Restrictions')).toBeVisible();
@@ -27,9 +42,9 @@ test('per-row actions dropdown exposes password/quota/restrict/delete', async ({
 
 async function applyQuota(page, emailText: string, value: string) {
   await page.goto('/emails/accounts');
-  const row = page.locator('tbody tr').filter({ hasText: emailText }).first();
-  await row.locator('button[type="button"]').last().click();
-  await row.getByText('Set Quota').click();
+  const row = page.locator('tbody tr').filter({ has: page.locator(`button[aria-label="Actions for ${emailText}"]`) }).first();
+  const menu = await openRowMenu(page, row);
+  await menu.getByText('Set Quota').click();
 
   await page.getByRole('button', { name: 'Set quota' }).click();
   await page.locator('input[placeholder="e.g. 512M or 2G"]').fill(value);
@@ -41,15 +56,15 @@ test('set quota for an account, then revert to its original value', async ({ pag
   const row = await firstEmailRow(page);
   test.skip(!row, 'No email accounts available on this environment');
 
-  const emailText = (await row!.locator('td').nth(0).innerText()).trim();
-  const originalQuotaText = (await row!.locator('td').nth(1).innerText()).trim();
+  const emailText = await rowEmail(row!);
+  const originalQuotaText = (await row!.locator('span[x-text="quota"]').innerText()).trim();
   test.skip(!/^\d/.test(originalQuotaText), 'Account has no numeric quota to safely revert to');
 
   await applyQuota(page, emailText, '999M');
 
   await page.goto('/emails/accounts');
-  const updatedRow = page.locator('tbody tr').filter({ hasText: emailText }).first();
-  await expect(updatedRow.locator('td').nth(1)).toContainText('999M', { timeout: 10_000 });
+  const updatedRow = page.locator('tbody tr').filter({ has: page.locator(`button[aria-label="Actions for ${emailText}"]`) }).first();
+  await expect(updatedRow.locator('span[x-text="quota"]')).toContainText('999M', { timeout: 10_000 });
 
   // revert to original quota
   await applyQuota(page, emailText, originalQuotaText);
@@ -63,8 +78,8 @@ test('restrictions modal opens for an account (not submitted)', async ({ page })
   const row = await firstEmailRow(page);
   test.skip(!row, 'No email accounts available on this environment');
 
-  await row!.locator('button[type="button"]').last().click();
-  await row!.getByText('Restrictions').click();
+  const menu = await openRowMenu(page, row!);
+  await menu.getByText('Restrictions').click();
 
   await expect(page.locator('body')).toBeVisible();
   console.log('restrictions modal opened (not submitted)');
@@ -75,14 +90,16 @@ test('delete account modal requires explicit confirm (not confirmed)', async ({ 
   const row = await firstEmailRow(page);
   test.skip(!row, 'No email accounts available on this environment');
 
-  const emailText = (await row!.locator('td').nth(0).innerText()).trim();
+  const emailText = await rowEmail(row!);
 
-  await row!.locator('button[type="button"]').last().click();
-  await row!.getByText('Delete Account').click();
+  const menu = await openRowMenu(page, row!);
+  await menu.getByText('Delete Account').click();
 
-  await expect(page.getByText(`Permanently delete`)).toBeVisible();
-  await expect(page.getByText(emailText)).toBeVisible();
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  // the bulk delete dialog has the same wording, so look inside the single delete one
+  const modal = page.locator('[x-show="showDeleteModal"]');
+  await expect(modal.getByText('Permanently delete')).toBeVisible();
+  await expect(modal.getByText(emailText)).toBeVisible();
+  await modal.getByRole('button', { name: 'Cancel' }).click();
 
   console.log(`delete-account confirm modal shown for ${emailText} and cancelled`);
 });

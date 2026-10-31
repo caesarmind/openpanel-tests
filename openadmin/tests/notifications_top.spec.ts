@@ -35,47 +35,25 @@ test('search filters the notifications table', async ({ page }) => {
   // 2 = Notification
   // 3 = Details
   // 4 = Actions
-  const firstTitle = (
-    await rows.first().locator('td').nth(2).innerText()
-  ).split('\n')[0].trim();
+  // the title cell is found by its content, a cluster master adds a Server column before it
+  const titleCell = (row: any) => row.locator('td:not([data-cluster-server])').nth(2);
+  const firstTitle = (await titleCell(rows.first()).innerText()).split('\n')[0].trim();
 
   expect(firstTitle).not.toBe('');
 
   console.log(`Searching notifications for: "${firstTitle}"`);
 
+  // search runs on the server, the form reloads the page with ?q=
   await search.fill(firstTitle);
+  await search.press('Enter');
+  await expect(page).toHaveURL(/[?&]q=/);
+  await page.waitForLoadState('load');
+  await expect(rows.first()).toBeVisible();
 
-  // The rows stay in the DOM; Alpine x-show hides non-matches.
-  const matchingRows = rows.filter({
-    has: page.locator('td:nth-child(3)', {
-      hasText: firstTitle,
-    }),
-  });
-
-  // At least one matching notification must be visible.
-  await expect(matchingRows.first()).toBeVisible();
-
-  // Every non-matching row must be hidden.
   const count = await rows.count();
-
+  expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
-    const row = rows.nth(i);
-    const title = (
-      await row.locator('td').nth(2).innerText()
-    ).trim();
-
-    if (title.toLowerCase().includes(firstTitle.toLowerCase())) {
-      await expect(row).toBeVisible();
-    } else {
-      await expect(row).toBeHidden();
-    }
-  }
-
-  // Clear search and verify all rows become visible again.
-  await search.fill('');
-
-  for (let i = 0; i < count; i++) {
-    await expect(rows.nth(i)).toBeVisible();
+    await expect(rows.nth(i)).toContainText(firstTitle, { ignoreCase: true });
   }
 
   console.log(

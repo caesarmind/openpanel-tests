@@ -62,7 +62,7 @@ async function fillPlanEditForm(page: any) {
 }
 
 async function verifyPlanRow(page: Page, planName: string) {
-  const row = page.locator('tr.user-row').filter({
+  const row = page.locator('tr.user-row:not([data-cluster-node])').filter({
     has: page.locator('td', { hasText: new RegExp(`^\\s*${planName}\\s*$`) }),
   });
   await expect(row).toHaveCount(1);
@@ -79,6 +79,8 @@ async function verifyPlanRow(page: Page, planName: string) {
 async function navigateToUserPackages(page: any) {
   await page.getByRole('link', { name: 'Hosting Plans' }).click();
   await page.getByRole('link', { name: 'User Packages' }).click();
+  // a multi-server master builds the table from every server, wait for the page and its scripts
+  await page.waitForLoadState('load');
 }
 
 test('create new hosting plan and verify all fields', async ({ page }) => {
@@ -107,7 +109,8 @@ test('create new hosting plan and verify all fields', async ({ page }) => {
   // Verify success toast.
   const successAlert = page.getByRole('alert');
 
-  await expect(successAlert).toBeVisible();
+  // the page after saving lists plans from every cluster member, give it time
+  await expect(successAlert).toBeVisible({ timeout: 15_000 });
   await expect(successAlert).toContainText(
     /Plan\s+probni\s+created\s+successfully/i
   );
@@ -121,7 +124,7 @@ test('create new hosting plan and verify all fields', async ({ page }) => {
   ).toBeVisible();
 
   // Find the newly-created plan in the table.
-  const row = page.locator('tr.user-row').filter({
+  const row = page.locator('tr.user-row:not([data-cluster-node])').filter({
     has: page.getByRole('cell', {
       name: 'probni',
       exact: true,
@@ -134,7 +137,7 @@ test('create new hosting plan and verify all fields', async ({ page }) => {
   const cells = row
     .getByRole('cell', { name: 'probni', exact: true })
     .locator('xpath=self::td | following-sibling::td')
-    .and(page.locator(':visible'));
+    .and(page.locator(':visible:not([data-cluster-server])'));
 
   // Verify displayed values.
   await expect(cells.nth(0)).toHaveText('probni');
@@ -173,7 +176,7 @@ test('edit hosting plan and verify all fields', async ({ page }) => {
   const planName = 'probni';
   const editedPlanName = 'probniRenamed';
 
-  const row = page.locator('tr.user-row').filter({
+  const row = page.locator('tr.user-row:not([data-cluster-node])').filter({
     has: page.getByRole('cell', {
       name: planName,
       exact: true,
@@ -182,27 +185,20 @@ test('edit hosting plan and verify all fields', async ({ page }) => {
 
   await expect(row).toBeVisible();
 
-  const menuButton = row
-    .locator('button[data-dropdown-toggle^="dropdown-"]')
-    .first();
-
+  // every row opens the same #plan-menu, filled in for the row that was clicked
+  const menuButton = row.locator('.plan-menu-btn').first();
   await expect(menuButton).toBeVisible();
+  // the menu also opens on hover and closes on scroll, so click until it's open
+  const dropdown = page.locator('#plan-menu');
+  await expect(async () => {
+    if (await dropdown.isHidden()) await menuButton.click();
+    await expect(dropdown).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
 
-  const dropdownId = await menuButton.getAttribute('data-dropdown-toggle');
-
-  if (!dropdownId) {
-    throw new Error(`Dropdown ID not found for plan row: ${planName}`);
-  }
-
-  await menuButton.click();
-
-  const dropdown = page.locator(`#${dropdownId}`);
-  await expect(dropdown).toBeVisible();
-
-  const editLink = dropdown.getByRole('link', { name: /^Edit$/ });
-
-  await expect(editLink).toBeVisible();
-  await editLink.click();
+  // the menu closes on scroll, which moving to the link can trigger, so follow the link it was filled with
+  const editHref = await dropdown.locator('#plan-menu-edit').getAttribute('href');
+  expect(editHref).toMatch(/^\/plans\/\d+$/);
+  await page.goto(editHref!);
 
   await expect(page).toHaveURL(/\/plans\/\d+/);
 
@@ -219,7 +215,8 @@ test('edit hosting plan and verify all fields', async ({ page }) => {
   // Verify success notification.
   const successAlert = page.getByRole('alert');
 
-  await expect(successAlert).toBeVisible();
+  // the page after saving lists plans from every cluster member, give it time
+  await expect(successAlert).toBeVisible({ timeout: 15_000 });
   await expect(successAlert).toContainText(
     /updated successfully|successfully updated/i
   );
@@ -233,7 +230,7 @@ test('edit hosting plan and verify all fields', async ({ page }) => {
   ).toBeVisible();
 
   // Find renamed plan.
-  const editedRow = page.locator('tr.user-row').filter({
+  const editedRow = page.locator('tr.user-row:not([data-cluster-node])').filter({
     has: page.getByRole('cell', {
       name: editedPlanName,
       exact: true,
@@ -246,7 +243,7 @@ test('edit hosting plan and verify all fields', async ({ page }) => {
   const cells = editedRow
     .getByRole('cell', { name: 'probniRenamed', exact: true })
     .locator('xpath=self::td | following-sibling::td')
-    .and(page.locator(':visible'));
+    .and(page.locator(':visible:not([data-cluster-server])'));
 
   // Verify edited plan values in table.
   await expect(cells.nth(0)).toHaveText('probniRenamed');
@@ -283,36 +280,32 @@ test('delete hosting plan', async ({ page }) => {
 
   const planName = 'probniRenamed';
 
-  const row = page.locator('tr.user-row').filter({
+  const row = page.locator('tr.user-row:not([data-cluster-node])').filter({
     has: page.locator('td', { hasText: new RegExp(`^${planName}$`) }),
   }).first();
 
   await expect(row).toBeVisible();
 
-  const menuButton = row.locator('button[data-dropdown-toggle^="dropdown-"]').first();
+  const menuButton = row.locator('.plan-menu-btn').first();
   await expect(menuButton).toBeVisible();
+  // the menu also opens on hover and closes on scroll, so click until it's open
+  const dropdown = page.locator('#plan-menu');
+  await expect(async () => {
+    if (await dropdown.isHidden()) await menuButton.click();
+    await expect(dropdown).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
 
-  const dropdownId = await menuButton.getAttribute('data-dropdown-toggle');
-  if (!dropdownId) {
-    throw new Error(`Dropdown ID not found for plan row: ${planName}`);
-  }
-
-  await menuButton.click();
-
-  const dropdown = page.locator(`#${dropdownId}`);
-  await expect(dropdown).toBeVisible();
-
-  const deleteButton = dropdown.getByRole('button', { name: /^Delete$/ });
-  await expect(deleteButton).toBeVisible();
-
+  // submit the form the menu was filled with, the menu itself closes on scroll
+  const deleteForm = dropdown.locator('#plan-menu-delete form');
+  await expect(deleteForm).toHaveAttribute('action', /\/plan\/delete\/probniRenamed$/);
   await Promise.all([
-    page.waitForLoadState('networkidle').catch(() => {}),
-    deleteButton.click(),
+    page.waitForURL(/\/plans/),
+    deleteForm.evaluate((f) => (f as HTMLFormElement).submit()),
   ]);
 
   await expect(page.getByText(/plan deleted successfully/i)).toBeVisible();
 
-  await expect(page.locator('tr.user-row').filter({
+  await expect(page.locator('tr.user-row:not([data-cluster-node])').filter({
     has: page.locator('td', { hasText: new RegExp(`^${planName}$`) }),
   })).toHaveCount(0);
 });
@@ -325,7 +318,7 @@ test('search hosting plans', async ({ page }) => {
   await navigateToUserPackages(page);
   await page.getByRole('searchbox', { name: 'Search by plan name...' }).fill('Standard');
   
-  const row = page.getByRole('row').filter({ hasText: 'Standard' });
+  const row = page.locator('tr:not([data-cluster-node])').filter({ hasText: 'Standard' });
   await expect(row).toHaveCount(1);
   await expect(row).toHaveText(/Standard plan/i);
 

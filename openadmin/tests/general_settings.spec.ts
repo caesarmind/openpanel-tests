@@ -26,7 +26,9 @@ test('update proxy and test restart needed msg', async ({ page }) => {
   // --- Restart OpenPanel: wait for the completion toast, not the banner ---
   const openpanelBtn = page
     .getByRole('row', { name: 'OpenPanel UI' })
-    .getByRole('button', { name: 'Restart openpanel', exact: true });
+    .getByRole('button', { name: 'Restart openpanel', exact: true })
+    // a cluster master shows a column per server, the first one is this server
+    .first();
 
   const openpanelStart = Date.now();
   await openpanelBtn.click();
@@ -55,6 +57,7 @@ test('update proxy and test restart needed msg', async ({ page }) => {
   await page
     .getByRole('row', { name: 'OpenAdmin UI' })
     .getByRole('button', { name: 'Restart admin', exact: true })
+    .first()
     .click();
   await expect(page.getByRole('alert')).toContainText(/openadmin is restarting/i);
 

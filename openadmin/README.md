@@ -11,6 +11,14 @@ Playwright end-to-end tests for the OpenAdmin (admin) panel.
    PANEL_USERNAME=
    PANEL_PASSWORD=
    ```
+3. Optional, to test multi-server: add a second server with an Enterprise license.
+   The suite joins it to `BASE_URL` as a slave (if it isn't already) and runs every
+   spec a second time on it through the master, as the `tests-slave` project.
+   ```
+   SLAVE_URL=https://203.0.113.20:2087
+   SLAVE_USERNAME=
+   SLAVE_PASSWORD=
+   ```
 
 ## Run manually
 
@@ -28,6 +36,8 @@ contention-related failures that aren't real bugs.
 ```bash
 cd /root/playwright-test && npx playwright test -c openadmin/playwright.config.ts --project=tests --workers=1
 ```
+
+With `SLAVE_URL` set, add `--project=tests-slave` to also run every spec on the slave.
 
 ## Automated daily runs (cron)
 
