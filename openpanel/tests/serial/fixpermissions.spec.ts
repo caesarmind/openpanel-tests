@@ -1,5 +1,6 @@
 
 import { test, expect, Page } from '@playwright/test';
+import { makeFile } from '../../helpers';
 
 async function selectItem(page: Page, name: string, multiSelect = false) {
   const row = page.locator(
@@ -125,8 +126,10 @@ test('fix permissions', async ({ page }) => {
   await verifyPermissions(page, 'testdir', '200');
   await verifyPermissions(page, 'test.txt', '200');
 
-  // Fix permissions
+  // Fix permissions, the folder list starts at the account root
   await page.goto('/fix-permissions');
+  await expect(page.locator('#folderPicker')).toBeVisible();
+  await expect(page.locator('#directory-select')).toHaveValue('/var/www/html/');
 
   await page.getByRole('button', {
     name: 'Fix Permissions'
@@ -134,7 +137,8 @@ test('fix permissions', async ({ page }) => {
 
   const message = page.locator('#scan-complete-message');
 
-  await expect(message).toBeVisible();
+  // the whole account root takes a while once apps are installed
+  await expect(message).toBeVisible({ timeout: 120000 });
   await expect(message).toHaveText('Permissions are fixed!');
 
   // Return to File Manager
@@ -164,4 +168,36 @@ test('fix permissions', async ({ page }) => {
   ).toHaveCount(0);
 
   console.log('Fix permissions test completed successfully');
+});
+
+test('fix permissions on a folder picked from the list', async ({ page }) => {
+  const dir = `pw-fixpick-${process.env.TEST_RUN_ID || Date.now()}`;
+  await makeFile(page, `${dir}/test.txt`, 'nista');
+
+  await page.goto(`/files/${dir}`);
+  await changePermissions(page, 'test.txt', '200');
+
+  await page.goto('/fix-permissions');
+  await page.locator('#folderPickerList').getByRole('button', { name: dir }).click();
+  await expect(page.locator('#directory-select')).toHaveValue(`/var/www/html/${dir}/`);
+  await expect(page.locator('#folderPickerSelected')).toHaveText(`/var/www/html/${dir}/`);
+
+  // manual mode shows the same path
+  await page.locator('#folderPickerToggle').click();
+  await expect(page.locator('#folderPickerManual')).toBeVisible();
+  await expect(page.locator('#directory-select')).toHaveValue(`/var/www/html/${dir}/`);
+
+  await page.getByRole('button', { name: 'Fix Permissions' }).click();
+  await expect(page.locator('#scan-complete-message')).toBeVisible();
+  // unlocked again once it's done
+  await expect(page.locator('#folderPickerToggle')).toBeVisible();
+
+  await page.goto(`/files/${dir}`);
+  await verifyPermissions(page, 'test.txt', '664');
+
+  await page.goto('/files');
+  await selectItem(page, dir);
+  await deleteSelected(page, true);
+  await expect(page.locator(`tr[data-file="${dir}"]`)).toHaveCount(0);
+  console.log('fix permissions folder picker is working');
 });

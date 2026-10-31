@@ -277,3 +277,22 @@ export async function saveLogin(browser: Browser, style: MenuStyle, file: string
   await context.storageState({ path: file });
   await context.close();
 }
+
+// edit-file can't create missing folders, so make each one in the file manager first, then write the file
+export async function makeFile(page: Page, filePath: string, content: string) {
+  const parts = filePath.split('/').filter(Boolean);
+  const name = parts.pop()!;
+  for (let i = 0; i < parts.length; i++) {
+    const parent = parts.slice(0, i).join('/');
+    await page.goto(parent ? `/files/${parent}` : '/files');
+    if (await page.locator(`#filemanager_table tbody tr[data-file="${parts[i]}"]`).count()) continue;
+    await page.locator('#newFolderButton').click();
+    await page.locator('#newfoDrawer #foldername').fill(parts[i]);
+    await page.locator('#newfoDrawer button[type="submit"][form="newFolderForm"]').click();
+    await expect(page.locator(`#filemanager_table tbody tr[data-file="${parts[i]}"]`)).toBeVisible();
+  }
+  await page.goto(`/file-manager/edit-file/${[...parts, name].join('/')}?editor=text&new=true`);
+  await page.locator('#editor-text').fill(content);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText(/saved successfully/i).first()).toBeVisible();
+}
