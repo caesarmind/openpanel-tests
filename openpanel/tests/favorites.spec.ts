@@ -32,8 +32,8 @@ const { bulkRun, bulkSelect, bulkSelectAllAndClear } = require('../helpers');
       const starBtn = page.locator('#addFavoriteBtn');
       await expect(starBtn).toBeVisible();
 
-      // The filled star SVG has an orange fill path
-      const filledStar = starBtn.locator('svg path[fill="orange"]');
+      // The filled star SVG has an orange fill path, the new theme marks the button pressed instead
+      const filledStar = starBtn.locator('svg path[fill="orange"]').or(page.locator('#addFavoriteBtn[aria-pressed="true"]'));
       await expect(filledStar).toBeVisible({ timeout: 5000 });
 
       await page.waitForLoadState('networkidle');
@@ -69,7 +69,8 @@ const { bulkRun, bulkSelect, bulkSelectAllAndClear } = require('../helpers');
     await expect(page).toHaveURL(/\/account\/favorites/);
   
     // Expect Dashboard to no longer be listed in the favorites table
-    const table = page.locator('table tbody');
+    // the new page shows an empty state instead of the table once the last favorite is gone
+    const table = page.locator('table tbody').or(page.locator('.op-empty'));
     await expect(table).not.toContainText('Dashboard', { timeout: 5000 });
   });
 
@@ -102,7 +103,8 @@ const { bulkRun, bulkSelect, bulkSelectAllAndClear } = require('../helpers');
       // Clear search
       await searchInput.fill('');
 
-      const link = dashboardRow.locator('a');
+      // the new rows also have an Open link in their actions menu
+      const link = dashboardRow.locator('a').first();
       await expect(link).toBeVisible();
       const href = await link.getAttribute('href');
       expect(href).toBe('/dashboard');
@@ -113,7 +115,12 @@ const { bulkRun, bulkSelect, bulkSelectAllAndClear } = require('../helpers');
       await page.goto(`/account/favorites`);
 
       const dashboardRow = page.locator('table tbody tr').filter({ hasText: 'Dashboard' });
-      const deleteBtn = dashboardRow.locator('button', { hasText: 'Delete' });
+      // the old row has a Delete button, the new one a Remove item in its actions menu
+      let deleteBtn = dashboardRow.locator('button', { hasText: 'Delete' });
+      if (!(await deleteBtn.count())) {
+          await dashboardRow.getByRole('button', { name: /^actions for/i }).click();
+          deleteBtn = dashboardRow.getByRole('button', { name: 'Remove', exact: true });
+      }
 
       await expect(deleteBtn).toBeVisible();
       await deleteBtn.click();
@@ -122,7 +129,7 @@ const { bulkRun, bulkSelect, bulkSelectAllAndClear } = require('../helpers');
       // await page.goto(`/account/favorites`);
      await page.waitForLoadState('networkidle');
 
-      const table = page.locator('table tbody');
+      const table = page.locator('table tbody').or(page.locator('.op-empty'));
       await expect(table).not.toContainText('Dashboard', { timeout: 5000 });
 
       // Sidebar should not contain the favorite, the header breadcrumb still says Dashboard so look at the favorites list only

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { openSiteTab } from '../site-tabs';
-import { ensureDomains } from '../helpers';
+import { deleteApplication, manageSite } from '../site-tabs';
+import { ensureDomains, clickInstall, wizardField } from '../helpers';
 
 const DOMAIN = 'java.tests.openpanel.org';
 
@@ -44,20 +44,21 @@ test.describe('Java autoinstaller', () => {
     test.setTimeout(5 * 60 * 1000);
 
     await page.goto('/java/install');
-
-    await page.locator('#service_name').fill(APP_NAME);
-    await page.locator('#port').fill(PORT);
     await page.locator('#domain_id').selectOption({ label: DOMAIN });
-    await page.locator('#startup_file').fill(STARTUP_FILE);
+
+    await (await wizardField(page, '#service_name')).fill(APP_NAME);
+    await (await wizardField(page, '#port')).fill(PORT);
+    await (await wizardField(page, '#startup_file')).fill(STARTUP_FILE);
     // single-file app, no pom.xml/Gemfile to install from
-    await page.locator('#requirements').uncheck();
+    await (await wizardField(page, '#requirements')).uncheck();
 
     // newest version is preselected once the list loads
     await expect.poll(() => page.locator('#version option').count(), { timeout: 30000 }).toBeGreaterThan(0);
 
-    await page.locator('#installButton').click();
+    await clickInstall(page);
 
-    await expect(page.getByText(/setup completed/i)).toBeVisible({ timeout: 4 * 60 * 1000 });
+    // the new wizard keeps that line in its collapsed install log and says "... is installed" on its done screen
+    await expect(page.getByText(/setup completed/i).and(page.locator(':visible')).or(page.locator('.op-iw-page h1', { hasText: /is installed/i })).first()).toBeVisible({ timeout: 4 * 60 * 1000 });
   });
 
   test('3. verify app appears on /sites', async ({ page }) => {
@@ -66,7 +67,7 @@ test.describe('Java autoinstaller', () => {
     const row = page.getByRole('row').filter({ hasText: DOMAIN });
     await expect(row).toBeVisible();
 
-    await row.getByRole('link', { name: 'Manage', exact: true }).click();
+    await manageSite(row);
     await expect(page).toHaveURL(`/website?domain=${DOMAIN}`);
   });
 
@@ -83,10 +84,7 @@ test.describe('Java autoinstaller', () => {
 
   test('5. remove app', async ({ page }) => {
     await page.goto(`/website?domain=${DOMAIN}`);
-    await openSiteTab(page, 'remove');
-
-    await page.getByRole('button', { name: 'Delete Application' }).click();
-    await page.getByRole('button', { name: 'Confirm delete' }).click();
+    await deleteApplication(page);
 
     await page.waitForURL('/sites', { timeout: 60000 });
     await expect(page.getByRole('row').filter({ hasText: DOMAIN })).toHaveCount(0);

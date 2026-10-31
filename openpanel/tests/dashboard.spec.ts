@@ -1,8 +1,21 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 
 async function navigateToDashboardPage(page: any) {
   await page.goto(`/dashboard`);
   await expect(page).toHaveURL(/dashboard/);
+}
+
+// the new theme opens on its own layout, the icon sections are its classic view; the old theme ignores the parameter
+async function navigateToIconSections(page: any) {
+  await page.goto(`/dashboard?view=classic`);
+  await expect(page).toHaveURL(/dashboard/);
+}
+
+// the old buttons turn bg-slate-700 when picked, the new ones set aria-pressed
+async function expectPicked(btn: Locator, picked: boolean) {
+  if ((await btn.getAttribute('aria-pressed')) !== null) await expect(btn).toHaveAttribute('aria-pressed', String(picked));
+  else if (picked) await expect(btn).toHaveClass(/bg-slate-700/);
+  else await expect(btn).not.toHaveClass(/bg-slate-700/);
 }
 
 // OPEN
@@ -136,8 +149,8 @@ test('icons mode toggle', async ({ page }) => {
   //
   await startBtn.click();
 
-  await expect(startBtn).toHaveClass(/bg-slate-700/);
-  await expect(topBtn).not.toHaveClass(/bg-slate-700/);
+  await expectPicked(startBtn, true);
+  await expectPicked(topBtn, false);
 
   await expect
     .poll(() =>
@@ -170,8 +183,8 @@ test('icons mode toggle', async ({ page }) => {
   const startBtnAfterReload =
     iconsPositionAfterReload.locator('button[title="Start"]');
 
-  await expect(startBtnAfterReload).toHaveClass(/bg-slate-700/);
-  await expect(topBtnAfterReload).not.toHaveClass(/bg-slate-700/);
+  await expectPicked(startBtnAfterReload, true);
+  await expectPicked(topBtnAfterReload, false);
 
   await expect
     .poll(() =>
@@ -184,8 +197,8 @@ test('icons mode toggle', async ({ page }) => {
   //
   await topBtnAfterReload.click();
 
-  await expect(topBtnAfterReload).toHaveClass(/bg-slate-700/);
-  await expect(startBtnAfterReload).not.toHaveClass(/bg-slate-700/);
+  await expectPicked(topBtnAfterReload, true);
+  await expectPicked(startBtnAfterReload, false);
 
   await expect
     .poll(() =>
@@ -207,7 +220,7 @@ test('icons mode toggle', async ({ page }) => {
 
 // SORTABLE
 test('icon sections drag&sort', async ({ page }) => {
-  await navigateToDashboardPage(page);
+  await navigateToIconSections(page);
 
   const sortable = page.locator('#dashboard-sortable-area');
 
@@ -268,7 +281,7 @@ test('icon sections drag&sort', async ({ page }) => {
 
 // SECTION CLOSE/OPEN
 test('icon sections open/close', async ({ page }) => {
-  await navigateToDashboardPage(page);
+  await navigateToIconSections(page);
 
   const firstSectionWrapper = page.locator('#dashboard-sortable-area > [data-id]').nth(0);
   const sectionKey = await firstSectionWrapper.getAttribute('data-id');
@@ -309,13 +322,16 @@ test('icon sections open/close', async ({ page }) => {
 test('menu items collapse/expand individually', async ({ page }) => {
   await navigateToDashboardPage(page);
 
+  // the new sidebar keeps the group of the current page open, so only the others can be toggled
   const groupItems = page.locator(
     '[data-sidebar="menu"] > li[x-data]:has(> button):has(> ul[x-show])'
-  );
+  ).or(page.locator('.op-nav > li[x-data]:has(> button.op-nav-group:not(.is-active)):has(> ul[x-show])'));
 
   const count = await groupItems.count();
 
   console.log(`Found ${count} collapsible sidebar groups`);
+  // the new theme's modern menu is a flat list, only its classic menu has groups
+  test.skip(count === 0 && (await page.locator('.op-nav').count()) > 0, 'flat menu, no groups to collapse');
   expect(count).toBeGreaterThan(0);
 
   for (let i = 0; i < count; i++) {

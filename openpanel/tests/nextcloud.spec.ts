@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { openSiteTab } from '../site-tabs';
-import { ensureDomains, runInstaller } from '../helpers';
-
+import { deleteApplication, manageSite } from '../site-tabs';
+import { ensureDomains, runInstaller, wizardField } from '../helpers';
 
 const DOMAIN = 'nextcloud.tests.openpanel.org';
 
@@ -19,9 +18,9 @@ test.describe('Nextcloud autoinstaller', () => {
 
   test('1. install app', async ({ page }) => {
     await page.goto('/nextcloud/install');
-
     await page.locator('#domain_id').selectOption({ label: DOMAIN });
-    await page.locator('#admin_email').fill(ADMIN_EMAIL);
+
+    await (await wizardField(page, '#admin_email')).fill(ADMIN_EMAIL);
     // admin_username, admin_password and db_* fields are pre-filled by the page's own JS
 
     await runInstaller(page, 'nextcloud', 10 * 60 * 1000);
@@ -33,7 +32,7 @@ test.describe('Nextcloud autoinstaller', () => {
     const row = page.locator(`tr[id="site-row-${DOMAIN}"]`);
     await expect(row).toBeVisible();
 
-    await row.getByRole('link', { name: 'Manage', exact: true }).click();
+    await manageSite(row);
     await expect(page).toHaveURL(`/website?domain=${DOMAIN}`);
   });
 
@@ -66,10 +65,7 @@ test.describe('Nextcloud autoinstaller', () => {
 
   test('5. remove app', async ({ page }) => {
     await page.goto(`/website?domain=${DOMAIN}`);
-    await openSiteTab(page, 'remove');
-
-    await page.getByRole('button', { name: 'Delete Application' }).click();
-    await page.getByRole('button', { name: 'Confirm delete' }).click();
+    await deleteApplication(page);
 
     await page.waitForURL('/sites', { timeout: 60000 });
     await expect(page.locator(`tr[id="site-row-${DOMAIN}"]`)).not.toBeVisible();

@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -55,7 +55,8 @@ export async function hasDomain(page: Page, domain: string): Promise<boolean> {
 export async function addDomain(page: Page, domain: string) {
   await page.goto('/domains/new');
   await expect(page).toHaveURL(/domains\/new/);
-  await page.getByRole('textbox', { name: 'Domain*' }).fill(domain);
+  // the old form labels it "Domain*", the new one "Domain name", the id is the same in both
+  await page.locator('#domain_url').fill(domain);
   await page.getByRole('button', { name: 'Add Domain' }).click();
   await expect(page.getByText(`Domain name ${domain} added successfully`)).toBeVisible({ timeout: 60_000 });
   console.log(`Domain added: ${domain}`);
@@ -104,6 +105,23 @@ export async function ensureDomains(browser: Browser, testInfo: TestInfo, ...dom
   });
 }
 
+// the new theme splits install forms into wizard steps, so click Continue until the field is on screen;
+// on the old one-page forms the field is already visible and nothing is clicked
+export async function wizardField(page: Page, selector: string): Promise<Locator> {
+  const field = page.locator(selector);
+  const next = page.getByRole('button', { name: /^\s*continue\s*$/i });
+  for (let i = 0; i < 6 && !(await field.isVisible()) && (await next.isVisible()); i++) {
+    await next.click();
+    await field.waitFor({ state: 'visible', timeout: 1500 }).catch(() => {});
+  }
+  return field;
+}
+
+// the Install button sits on the wizard's last step in the new theme
+export async function clickInstall(page: Page) {
+  await (await wizardField(page, '#installButton')).click();
+}
+
 // clicks Install on an app's install page and waits for the outcome; on a failure it fails right away with the
 // installer's own output instead of waiting out the whole timeout
 export async function runInstaller(page: Page, app: string, timeout: number) {
@@ -113,7 +131,7 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
   );
 
   // "Latest" makes the server ask GitHub's API, 60 calls an hour per IP run out on repeated runs, so pick the newest listed version instead
-  const versionSelect = page.locator(`#${app}_version`);
+  const versionSelect = await wizardField(page, `#${app}_version`);
   if (await versionSelect.count()) {
     const firstVersion = versionSelect.locator('option:not([value=""])').first();
     try {
@@ -125,7 +143,7 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
     }
   }
 
-  await page.locator('#installButton').click();
+  await clickInstall(page);
 
   const outcome = page.getByText(/installation completed|install process failed/i).first();
   await expect(outcome).toBeVisible({ timeout });
@@ -134,6 +152,31 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
     const log = await response.then(r => r.text(), () => '(installer output not available)');
     expect(text, `install failed, installer output:\n${log}`).toMatch(/installation completed/i);
   }
+}
+
+// column pickers: the old ones list checkboxes under "Show Columns", the new ones labelled checkboxes or switch
+// buttons under "Columns"; opens the picker and returns each column's key, what to click and whether it's on
+export async function openColumnToggles(page: Page) {
+  await page.getByRole('button', { name: /^(show )?columns$/i }).click();
+  const rows = page.locator('ul[aria-labelledby="dropdownToggleButton"] li')
+    .or(page.locator('.op-columns:visible > label'))
+    .or(page.locator('.op-menu:visible button.op-menu-row:has([role="switch"])'));
+  await rows.first().waitFor();
+  const toggles: { key: string; toggle: Locator; isOn: () => Promise<boolean> }[] = [];
+  for (const row of await rows.all()) {
+    const checkbox = row.locator('input[type="checkbox"]');
+    if (await checkbox.count()) {
+      const xModel = await checkbox.getAttribute('x-model');
+      if (!xModel) continue;
+      const label = row.locator('label');
+      toggles.push({ key: xModel.replace('columns.', ''), toggle: (await label.count()) ? label : row, isOn: () => checkbox.isChecked() });
+    } else {
+      const key = (await row.getAttribute('@click.stop'))?.match(/columns\.(\w+)/)?.[1];
+      if (!key) continue;
+      toggles.push({ key, toggle: row, isOn: async () => (await row.locator('[role="switch"]').getAttribute('aria-checked')) === 'true' });
+    }
+  }
+  return toggles;
 }
 
 // bulk actions bar (templates/partials/_bulk.html + static/js/bulk-actions.js), shared by every page that has row checkboxes

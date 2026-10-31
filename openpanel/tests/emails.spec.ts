@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -101,8 +101,14 @@ test('create email new page loads', async ({ page }) => {
   await expect(page.locator('select[name="domain"]')).toBeVisible();
   await expect(page.locator('input[name="username"]')).toBeVisible();
   await expect(page.locator('input[name="password"]')).toBeVisible();
-  await expect(page.locator('input[name="gb"]')).toBeVisible();
-  await expect(page.locator('select[name="format"]')).toBeVisible();
+  // the new theme picks the quota from presets and fills the hidden gb and format inputs itself
+  const quotaPresets = page.getByRole('radiogroup', { name: /storage quota/i });
+  if (await quotaPresets.count()) {
+    await expect(quotaPresets).toBeVisible();
+  } else {
+    await expect(page.locator('input[name="gb"]')).toBeVisible();
+    await expect(page.locator('select[name="format"]')).toBeVisible();
+  }
   await expect(page.getByRole('button', { name: /create email/i })).toBeVisible();
 });
 
@@ -149,9 +155,11 @@ test('emails accounts search filters rows', async ({ page }) => {
   const rows = page.locator('#email-accounts tbody tr[x-show]');
   if (await rows.count() === 0) { test.skip(); return; }
 
+  // "Emails Header" with a "Search" box on the old page, "Email accounts" with "Search emails" on the new one
   const search = page
     .getByRole('region', { name: 'Emails Header' })
-    .getByRole('searchbox', { name: 'Search' });
+    .or(page.getByRole('region', { name: 'Email accounts' }))
+    .getByRole('searchbox', { name: /^search( emails)?$/i });
 
   await search.fill('zzz_nomatch_xyz');
   await expect(rows).toHaveCount(await rows.count()); // rows stay in DOM, x-show hides them
@@ -173,7 +181,8 @@ test('edit email page loads for existing account', async ({ page }) => {
   const hasRows = await firstRow.isVisible().catch(() => false);
   if (!hasRows) { test.skip(); return; }
 
-  const manageLink = firstRow.locator('a[href*="/emails/edit/"]');
+  // the new rows link the address, the gear and the menu item to the same edit page
+  const manageLink = firstRow.locator('a[href*="/emails/edit/"]').first();
   const href = await manageLink.getAttribute('href');
   await page.goto(href!);
   await expect(page).toHaveURL(/emails\/edit\/.+@/);
@@ -296,6 +305,12 @@ test.describe.serial('email quota', () => {
     return row.locator('td[data-sort-col="quota"]');
   }
 
+  // the new cell shows "used / limit" and keeps the old "( used / limit )" text in its title
+  async function quotaText(cell: Locator) {
+    const meter = cell.locator('.op-meter-text');
+    return (await meter.count()) ? (await meter.getAttribute('title')) ?? '' : await cell.innerText();
+  }
+
   test('create email with 512 MiB quota and verify it in the table', async ({ page }) => {
     await page.goto('/emails');
 
@@ -317,15 +332,25 @@ test.describe.serial('email quota', () => {
     await page.locator('input[name="username"]').fill(username);
     await page.locator('input[name="password"]').fill(PASSWORD);
 
-    // Select MiB from the new dropdown
-    const quotaInput = page.locator('input[name="gb"]');
-    const quotaFormat = page.locator('select[name="format"]');
+    // the new theme has quota presets plus a Custom size with its own unit select
+    const customQuota = page.getByRole('radio', { name: /^custom$/i });
+    if (await customQuota.count()) {
+      await customQuota.click();
+      await page.locator('#quota-size').fill('512');
+      await page.getByRole('combobox', { name: 'Unit' }).selectOption('M');
+      await expect(page.locator('input[name="gb"]')).toHaveValue('512');
+      await expect(page.locator('input[name="format"]')).toHaveValue('M');
+    } else {
+      // Select MiB from the new dropdown
+      const quotaInput = page.locator('input[name="gb"]');
+      const quotaFormat = page.locator('select[name="format"]');
 
-    await quotaFormat.selectOption({ label: 'MiB' });
-    await expect(quotaFormat).toHaveValue('M');
+      await quotaFormat.selectOption({ label: 'MiB' });
+      await expect(quotaFormat).toHaveValue('M');
 
-    await quotaInput.fill('512');
-    await expect(quotaInput).toHaveValue('512');
+      await quotaInput.fill('512');
+      await expect(quotaInput).toHaveValue('512');
+    }
 
     await page.getByRole('button', {
       name: /create email/i,
@@ -339,10 +364,7 @@ test.describe.serial('email quota', () => {
     await expect(async () => {
       const quotaCell = await getQuotaCell(page);
 
-      await expect(quotaCell).toContainText(
-        /\/\s*512(?:\.0)?M\s*\)/i,
-        { timeout: 2000 }
-      );
+      expect(await quotaText(quotaCell)).toMatch(/\/\s*512(?:\.0)?M\s*\)/i);
     }).toPass({
       timeout: 60000,
       intervals: [5000],
@@ -382,7 +404,7 @@ test.describe.serial('email quota', () => {
     await expect(async () => {
       const quotaCell = await getQuotaCell(page);
 
-      await expect(quotaCell).toContainText(expected, { timeout: 2000 });
+      expect(await quotaText(quotaCell)).toMatch(expected);
     }).toPass({
       timeout: 60000,
       intervals: [5000],
@@ -417,8 +439,8 @@ test('clamp email quota above plan limit', async ({ page }) => {
   const shown = (n: number) => new RegExp(`\\/\\s*${n}(?:\\.0)?${unit}\\s*\\)`, 'i');
   await expect(async () => {
     const quotaCell = await getQuotaCell(page);
-    await expect(quotaCell).toContainText(shown(max), { timeout: 2000 });
-    await expect(quotaCell).not.toContainText(shown(max + 1));
+    expect(await quotaText(quotaCell)).toMatch(shown(max));
+    expect(await quotaText(quotaCell)).not.toMatch(shown(max + 1));
   }).toPass({
     timeout: 60000,
     intervals: [5000],
@@ -691,7 +713,8 @@ test('aliases list page loads', async ({ page }) => {
 
 test('new alias page loads', async ({ page }) => {
   await page.goto('/emails/aliases/new');
-  await expect(page).toHaveURL(/emails\/aliases\/new/);
+  // the new theme opens the form as a sheet on the aliases list
+  await expect(page).toHaveURL(/emails\/aliases(\/new|\?new=1)/);
   await expect(page.getByRole('heading', { name: /create an alias/i })).toBeVisible();
 
   await expect(page.locator('select[name="domain"]')).toBeVisible();
@@ -724,6 +747,7 @@ test('new alias — domain selector updates @domain preview', async ({ page }) =
   await domainSelect.selectOption(firstValue);
 
   const atPreview = page.locator('#at_address');
+  test.skip(!(await atPreview.count()), 'the new theme shows the domain in the select itself, there is no @domain preview field');
   await expect(atPreview).toHaveValue(`@${firstValue}`);
 });
 
@@ -984,7 +1008,8 @@ test('default address — set and clear catch-all', async ({ page }) => {
     { timeout: 60_000 },
   );
   await saveButton.click();
-  expect((await saved).ok(), 'catch-all save request failed').toBe(true);
+  // the save answers with a redirect back to the page, which fetch follows
+  expect((await saved).status(), 'catch-all save request failed').toBeLessThan(400);
 
   /*
    * The save operation may update the page through JavaScript rather than
@@ -999,9 +1024,15 @@ test('default address — set and clear catch-all', async ({ page }) => {
     await expect(destinationInput).toHaveValue(destination);
   }
 
-  // Clear catch-all, the Remove button is there once a rule exists, the save above may still be reloading the page
-  await page.goto(`/emails/default/${encodeURIComponent(domain)}`);
+  // Clear catch-all, the Remove button is there once a rule exists; the page reloads itself after the save and a goto racing that reload gets aborted
+  await page.waitForLoadState('load');
+  await expect(async () => {
+    await page.goto(`/emails/default/${encodeURIComponent(domain)}`);
+  }).toPass({ timeout: 15_000 });
   const deleteButton = page.locator('#delete-btn');
+  // the new theme asks in a sheet first, its Remove button opens it
+  const removeTrigger = page.getByRole('button', { name: /^remove catch-all$/i }).first();
+  if (!(await deleteButton.isVisible()) && (await removeTrigger.isVisible())) await removeTrigger.click();
   await expect(deleteButton).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
   await deleteButton.click();

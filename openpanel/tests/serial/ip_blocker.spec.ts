@@ -28,7 +28,8 @@ test('IP Blocker', async ({ page, context }) => {
 
     // 2. block ip
     await page.goto('/security/ip-blocker');
-    await expect(page.getByText('CIDR')).toBeVisible();
+    // the new page says CIDR in both the label and the hint
+    await expect(page.getByText('CIDR').first()).toBeVisible();
     await page.locator('#blocked_ips').fill(serverIP);
     await page.click('#save-ips');
     await expect(page.getByText('IP addresses have been successfully added to blocklist and can no longer access websites')).toBeVisible();

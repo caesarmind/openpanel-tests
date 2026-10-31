@@ -222,11 +222,12 @@ test('configuration editor', async ({ page }) => {
 test('remote access', async ({ page }) => {
   await page.goto('/postgresql/remote-postgresql');
 
-  const statusText = page.locator('dd p.text-lg.font-semibold');
+  // old page: a dd with status bars, new page: a status pill and button in the toggle form
+  const statusText = page.locator('dd p.text-lg.font-semibold, form:has(> input[name="action"]) > .op-status');
   await expect(statusText).toHaveText('Disabled');
 
   // ON
-  const enableBtn = page.locator('dd button', { hasText: 'Click to Enable' });
+  const enableBtn = page.locator('dd button, form:has(> input[name="action"]) > button', { hasText: 'Click to Enable' });
   await enableBtn.click();
   await expect(page.locator('text=Remote PostgreSQL access is now enabled')).toBeVisible();
   await expect(statusText).toHaveText('Enabled');
@@ -234,7 +235,7 @@ test('remote access', async ({ page }) => {
 
   // OFF
   await page.goto('/postgresql/remote-postgresql');
-  const disableBtn = page.locator('dd button', { hasText: 'Click to Disable' });
+  const disableBtn = page.locator('dd button, form:has(> input[name="action"]) > button', { hasText: 'Click to Disable' });
   await disableBtn.click();
   await expect(page.locator('text=Remote PostgreSQL access is now disabled')).toBeVisible();
   await expect(statusText).toHaveText('Disabled');

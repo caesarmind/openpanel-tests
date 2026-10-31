@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
-import { bulkReply, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
+import { bulkReply, bulkRun, bulkSelect, bulkSelectAllAndClear, clickInstall, ensureDomains, wizardField } from '../helpers';
 
 // own domain, the waf, maintenance and remove tests change what it serves
 const domain = 'wordpress.tests.openpanel.org';
@@ -34,17 +34,18 @@ test('install wordpress', async ({ page }) => {
 
   await page.locator('#domain_id').selectOption({ label: domain });
 
-  await page.locator('#website_name').fill('My Site');
-  await page.locator('#site_description').fill('another site testing');
+  await (await wizardField(page, '#website_name')).fill('My Site');
+  await (await wizardField(page, '#site_description')).fill('another site testing');
 
-  await page.locator('#admin_email').fill(`admin@${domain}`);
-  await page.locator('#admin_username').fill(WP_ADMIN.username);
-  await page.locator('#admin_password').fill(WP_ADMIN.password);
+  await (await wizardField(page, '#admin_email')).fill(`admin@${domain}`);
+  await (await wizardField(page, '#admin_username')).fill(WP_ADMIN.username);
+  await (await wizardField(page, '#admin_password')).fill(WP_ADMIN.password);
 
-  await page.locator('#installButton').click();
+  await clickInstall(page);
 
   // slower while other workers install apps too
-  await expect(page.getByText(/WordPress installation completed!/i)).toBeVisible({ timeout: 5 * 60_000 });
+  // the new wizard has the line in its install log too, which stays hidden until opened
+  await expect(page.getByText(/WordPress installation completed!/i).and(page.locator(':visible')).first()).toBeVisible({ timeout: 5 * 60_000 });
   console.log('wordpress install completed');
 
   await page.goto('/wordpress');

@@ -368,10 +368,11 @@ test('database wizard', async ({ page }) => {
 test('remote access', async ({ page }) => {
   await page.goto('/mysql/remote-mysql');
 
-  const statusText = page.locator('dd p.text-lg.font-semibold');
+  // old page: a dd with status bars, new page: a status pill and button in the toggle form
+  const statusText = page.locator('dd p.text-lg.font-semibold, form:has(> input[name="action"]) > .op-status');
   await expect(statusText).toHaveText('Disabled');
 
-  const redBars = page.locator('dd .bg-red-500').first();
+  const redBars = page.locator('dd .bg-red-500, form:has(> input[name="action"]) > .op-status:not(.is-success)').first();
   await expect(redBars).toBeVisible();
 
   const localServerText = await page.locator('#local_server').textContent();
@@ -395,11 +396,11 @@ test('remote access', async ({ page }) => {
   expect(remotePortNum).toBeLessThanOrEqual(65535);
 
   // 1. ON
-  const enableBtn = page.locator('dd button', { hasText: 'Click to Enable' });
+  const enableBtn = page.locator('dd button, form:has(> input[name="action"]) > button', { hasText: 'Click to Enable' });
   await enableBtn.click();
   await expect(page.locator('text=Remote MySQL access is now enabled')).toBeVisible();
   await expect(statusText).toHaveText('Enabled');
-  const greenBars = page.locator('dd .bg-emerald-500').first();
+  const greenBars = page.locator('dd .bg-emerald-500, form:has(> input[name="action"]) > .op-status.is-success').first();
   await expect(greenBars).toBeVisible();
   console.log('remote access is enabled');
 
@@ -421,7 +422,7 @@ test('remote access', async ({ page }) => {
 
   // 3. OFF
   await page.goto('/mysql/remote-mysql');
-  const disableBtn = page.locator('dd button', { hasText: 'Click to Disable' });
+  const disableBtn = page.locator('dd button, form:has(> input[name="action"]) > button', { hasText: 'Click to Disable' });
   await disableBtn.click();
   await expect(page.locator('text=Remote MySQL access is now disabled')).toBeVisible();
   await expect(statusText).toHaveText('Disabled');
@@ -779,12 +780,12 @@ test('bulk remove remote access hosts', async ({ page }) => {
   test.setTimeout(5 * 60_000);
   const user = 'mysqlbulkremote';
   const hosts = ['10.11.12.13', '10.11.12.14'];
-  const statusText = page.locator('dd p.text-lg.font-semibold');
+  const statusText = page.locator('dd p.text-lg.font-semibold, form:has(> input[name="action"]) > .op-status');
 
   // the per-user host list only shows while remote access is on
   await page.goto('/mysql/remote-mysql');
   await expect(statusText).toHaveText('Disabled');
-  await page.locator('dd button', { hasText: 'Click to Enable' }).click();
+  await page.locator('dd button, form:has(> input[name="action"]) > button', { hasText: 'Click to Enable' }).click();
   await expect(page.locator('text=Remote MySQL access is now enabled')).toBeVisible();
 
   try {
@@ -812,7 +813,7 @@ test('bulk remove remote access hosts', async ({ page }) => {
     for (const host of hosts) await expect(page.locator('#remote-access-table')).not.toContainText(host);
   } finally {
     await page.goto('/mysql/remote-mysql');
-    await page.locator('dd button', { hasText: 'Click to Disable' }).click();
+    await page.locator('dd button, form:has(> input[name="action"]) > button', { hasText: 'Click to Disable' }).click();
     await expect(page.locator('text=Remote MySQL access is now disabled')).toBeVisible();
     // mysql restarts after the toggle
     await page.waitForTimeout(10000);

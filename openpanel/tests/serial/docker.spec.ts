@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { bulkRun, bulkSelectAllAndClear, bulkSelectKeys, ensureDomains } from '../../helpers';
+import { bulkRun, bulkSelectAllAndClear, bulkSelectKeys, ensureDomains, openColumnToggles } from '../../helpers';
 
 // the webserver page check needs at least one domain on the account
 test.beforeAll(async ({ browser }, testInfo) => {
@@ -13,32 +13,20 @@ test.beforeAll(async ({ browser }, testInfo) => {
 test('check columns for docker table', async ({ page }) => {
   await page.goto(`/containers`);
   await expect(page).toHaveURL(/containers/);
-  await page.getByRole('button', { name: 'Show Columns' }).click();
+  for (const { key, toggle, isOn } of await openColumnToggles(page)) {
+    const th = page.locator(`th[x-show="columns.${key}"]`);
+    const initialState = await isOn();
 
-  const rows = page.locator('ul[aria-labelledby="dropdownToggleButton"] li');
-  const count = await rows.count();
+    await toggle.click();
+    await page.waitForTimeout(100); // needed for alpine.js x-show
 
-  for (let i = 0; i < count; i++) {
-    const row = rows.nth(i);
-    const checkbox = row.locator('input[type="checkbox"]');
-    const xModel = await checkbox.getAttribute('x-model');
-    if (!xModel) continue;
-
-    const columnKey = xModel.replace('columns.', '');
-    const th = page.locator(`th[x-show="columns.${columnKey}"]`);
-    const initialState = await checkbox.isChecked();
-
-    await row.locator('label').click();
-    await page.waitForTimeout(100);
-
-    const expectedStateAfterToggle = !initialState;
-    if (expectedStateAfterToggle) {
+    if (!initialState) {
       await expect(th).toBeVisible();
     } else {
       await expect(th).toBeHidden();
     }
 
-    await row.locator('label').click();
+    await toggle.click();
     await page.waitForTimeout(100);
 
     if (initialState) {

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { bulkRun, bulkSelect, bulkSelectAllAndClear } from '../helpers';
 
 // These tests intentionally share a cron job. Run in order, in one worker.
@@ -15,6 +15,19 @@ function jobRow(page: Page, name: string) {
   return page.locator('#cronjobs-table tbody tr').filter({
     has: page.locator('[data-sort-col="comment"]', { hasText: name }),
   });
+}
+
+// the old rows have their own Edit and Delete buttons, the new ones keep them in the row's actions menu
+async function rowAction(row: Locator, action: 'Edit' | 'Delete', name: string) {
+  const direct = row.getByRole('button', { name: `${action} ${name}`, exact: true });
+  if (await direct.count()) return direct.click();
+  await row.getByRole('button', { name: `Actions ${name}`, exact: true }).click();
+  await row.getByRole('button', { name: action, exact: true }).click();
+}
+
+// both themes arm the delete button for five seconds, the old one retitles it Confirm, the new one relabels it
+function confirmButton(row: Locator) {
+  return row.locator('button[title="Confirm"]').or(row.getByRole('button', { name: /^confirm/i }));
 }
 
 async function jobTable(page: Page) {
@@ -43,8 +56,8 @@ test('list', async ({ page }) => {
   while (await stale.count()) {
     const row = stale.first();
     const name = (await row.locator('[data-sort-col="comment"]').innerText()).trim();
-    await row.getByRole('button', { name: `Delete ${name}` }).click();
-    await row.locator('button[title="Confirm"]').click();
+    await rowAction(row, 'Delete', name);
+    await confirmButton(row).click();
     await expect(page.getByText('Cron job was successfully deleted.')).toBeVisible();
     await jobList(page);
   }
@@ -85,7 +98,10 @@ test('view logs', async ({ page }) => {
   await expect(row).toBeVisible();
 
   // New frontend: a Logs link exists on each row as well as in the top tabs.
-  await row.locator('a[href^="/cronjobs/logs?job="]').click();
+  const logsLink = row.locator('a[href^="/cronjobs/logs?job="]');
+  // the new row keeps its logs link in the actions menu
+  if (!(await logsLink.isVisible())) await row.getByRole('button', { name: `Actions ${JOB}`, exact: true }).click();
+  await logsLink.click();
   await expect(page).toHaveURL(/\/cronjobs\/logs(?:\?|$)/);
 
   // container logs are cached 60s per `lines` value, so bump it each poll to always get a fresh read
@@ -147,7 +163,7 @@ test('edit job', async ({ page }) => {
   for (const edit of edits) {
     let row = jobRow(page, currentName);
     await expect(row).toBeVisible();
-    await row.getByRole('button', { name: `Edit ${currentName}` }).click();
+    await rowAction(row, 'Edit', currentName);
 
     const field = row.locator(`[name="${edit.field}"]:visible`);
     await expect(field).toBeVisible();
@@ -172,10 +188,10 @@ test('delete job', async ({ page }) => {
   await jobTable(page);
   const row = jobRow(page, UPDATED_JOB);
   await expect(row).toBeVisible();
-  await row.getByRole('button', { name: `Delete ${UPDATED_JOB}` }).click();
+  await rowAction(row, 'Delete', UPDATED_JOB);
 
-  // The row's delete button changes its title to Confirm for five seconds.
-  const confirm = row.locator('button[title="Confirm"]');
+  // The row's delete button turns into Confirm for five seconds.
+  const confirm = confirmButton(row);
   await expect(confirm).toBeVisible();
   await confirm.click();
   await expect(page.getByText('Cron job was successfully deleted.')).toBeVisible();
@@ -213,7 +229,7 @@ test('bulk actions', async ({ page }) => {
 
   await bulkSelect(page, jobs);
   await bulkRun(page, 'schedule', '0 30 4 * * *');
-  for (const name of jobs) await expect(jobRow(page, name).locator('[data-sort-col="schedule"]')).toHaveText('0 30 4 * * *');
+  for (const name of jobs) await expect(jobRow(page, name).locator('[data-sort-col="schedule"]')).toContainText('0 30 4 * * *');
 
   await bulkSelect(page, jobs);
   await bulkRun(page, 'delete');

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { openSiteTab } from '../site-tabs';
-import { ensureDomains } from '../helpers';
+import { deleteApplication, manageSite } from '../site-tabs';
+import { ensureDomains, clickInstall, wizardField } from '../helpers';
 
 const DOMAIN = 'n8n.tests.openpanel.org';
 
@@ -20,11 +20,11 @@ test.describe('n8n autoinstaller', () => {
     test.setTimeout(8 * 60 * 1000);
 
     await page.goto('/n8n/install');
-
-    await page.locator('#service_name').fill(APP_NAME);
     await page.locator('#domain_id').selectOption({ label: DOMAIN });
-    await page.locator('#owner_email').fill(OWNER_EMAIL);
-    await page.locator('#owner_password').fill(OWNER_PASSWORD);
+
+    await (await wizardField(page, '#service_name')).fill(APP_NAME);
+    await (await wizardField(page, '#owner_email')).fill(OWNER_EMAIL);
+    await (await wizardField(page, '#owner_password')).fill(OWNER_PASSWORD);
 
     await expect.poll(() => page.locator('#version option').count(), { timeout: 30000 }).toBeGreaterThan(0);
 
@@ -32,9 +32,10 @@ test.describe('n8n autoinstaller', () => {
       r => r.url().includes('/n8n/install') && r.request().method() === 'POST',
       { timeout: 7 * 60 * 1000 },
     );
-    await page.locator('#installButton').click();
+    await clickInstall(page);
 
-    await expect(page.getByText(/setup completed/i)).toBeVisible({ timeout: 7 * 60 * 1000 });
+    // the new wizard keeps that line in its collapsed install log and says "... is installed" on its done screen
+    await expect(page.getByText(/setup completed/i).and(page.locator(':visible')).or(page.locator('.op-iw-page h1', { hasText: /is installed/i })).first()).toBeVisible({ timeout: 7 * 60 * 1000 });
 
     // owner creation is best-effort in the installer and only reported in the stream, so check it here
     const log = await (await installResponse).text();
@@ -47,7 +48,7 @@ test.describe('n8n autoinstaller', () => {
     const row = page.getByRole('row').filter({ hasText: DOMAIN });
     await expect(row).toBeVisible();
 
-    await row.getByRole('link', { name: 'Manage', exact: true }).click();
+    await manageSite(row);
     await expect(page).toHaveURL(`/website?domain=${DOMAIN}`);
   });
 
@@ -70,10 +71,7 @@ test.describe('n8n autoinstaller', () => {
 
   test('4. remove app', async ({ page }) => {
     await page.goto(`/website?domain=${DOMAIN}`);
-    await openSiteTab(page, 'remove');
-
-    await page.getByRole('button', { name: 'Delete Application' }).click();
-    await page.getByRole('button', { name: 'Confirm delete' }).click();
+    await deleteApplication(page);
 
     await page.waitForURL('/sites', { timeout: 60000 });
     await expect(page.getByRole('row').filter({ hasText: DOMAIN })).toHaveCount(0);

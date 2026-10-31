@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { ensureDomains } from '../helpers';
+import { test, expect, type Page } from '@playwright/test';
+import { clickInstall, ensureDomains } from '../helpers';
 
 const domain = 'website-builder.tests.openpanel.org';
 
@@ -42,6 +42,17 @@ test('install form has domain selector', async ({ page }) => {
 });
 
 
+// the old page redirects to the builder on its own, the new one stays on a done screen with a link to it
+async function expectBuilderOpened(page: Page) {
+  const editor = new RegExp(`/website-builder/edit\\?domain=${domain.replace(/\./g, '\\.')}$`);
+  const open = page.getByRole('link', { name: /open website builder/i });
+  await expect(page.locator('text=Website creation completed!').or(open).first()).toBeAttached({ timeout: 60000 });
+  await expect(page).toHaveURL(editor, { timeout: 10000 }).catch(async () => {
+    await open.click();
+    await expect(page).toHaveURL(editor);
+  });
+}
+
 test('website builder', async ({ page }) => {
   test.setTimeout(3 * 60 * 1000);
   await removeIndexHtml(page);
@@ -50,12 +61,11 @@ test('website builder', async ({ page }) => {
   await page.goto('/website-builder/install');
   await page.locator('#domain_id').selectOption('website-builder.tests.openpanel.org');
   const installResponse = page.waitForResponse(r => r.url().includes('/website-builder/install') && r.request().method() === 'POST', { timeout: 60000 });
-  await page.locator('#installButton').click();
+  await clickInstall(page);
   // the stream carries the real error, so fail with it instead of a missing toast
   const installLog = await (await installResponse).text();
   expect(installLog, installLog).toContain('Website creation completed!');
-  await expect(page.locator('text=Website creation completed!')).toBeVisible({ timeout: 60000 });
-  await expect(page).toHaveURL(url => url.pathname === '/website-builder/edit' && url.searchParams.get('domain') === domain);
+  await expectBuilderOpened(page);
 
   // 2. test edit and save
   await page.locator('span.gjs-pn-btn.fa.fa-save').click();
@@ -97,9 +107,8 @@ test('website builder', async ({ page }) => {
   // 5. install again and test detach
   await page.goto('/website-builder/install');
   await page.locator('#domain_id').selectOption('website-builder.tests.openpanel.org');
-  await page.locator('#installButton').click();
-  await expect(page.locator('text=Website creation completed!')).toBeVisible({ timeout: 60000 });
-  await expect(page).toHaveURL(url => url.pathname === '/website-builder/edit' && url.searchParams.get('domain') === domain);
+  await clickInstall(page);
+  await expectBuilderOpened(page);
 
   await page.goto('/website?domain=website-builder.tests.openpanel.org');
   await page.locator('a#remove-tab').click();

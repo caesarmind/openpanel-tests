@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomBytes } from 'crypto';
 import dns from 'dns';
-import { addDomain, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, hasDomain, waitForCert, withLock } from '../../helpers';
+import { addDomain, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, hasDomain, openColumnToggles, waitForCert, withLock } from '../../helpers';
 
 // only this spec's own domains, every other spec adds the domain it needs itself
 const DOMAIN = 'domains.tests.openpanel.org';
@@ -107,7 +107,8 @@ test('search domains', async ({ page }) => {
   await page.goto(`/domains`);
   await expect(page).toHaveURL(/domains/);
 
-  const searchBox = page.getByRole('searchbox', { name: 'Search' });
+  // "Search" on the old page, "Search domains" on the new one, which also has the menu's search box
+  const searchBox = page.getByRole('searchbox', { name: /^search( domains)?$/i });
   const rows = page.locator('tbody tr');
 
   await searchBox.fill(DOMAIN);
@@ -133,37 +134,20 @@ test('search domains', async ({ page }) => {
 test('check columns for domains table', async ({ page }) => {
   await page.goto(`/domains`);
   await expect(page).toHaveURL(/domains/);
-  await page.getByRole('button', { name: 'Show Columns' }).click();
+  for (const { key, toggle, isOn } of await openColumnToggles(page)) {
+    const th = page.locator(`th[x-show="columns.${key}"]`);
+    const initialState = await isOn();
 
-  const rows = page.locator('ul[aria-labelledby="dropdownToggleButton"] li');
-
-  const count = await rows.count();
-
-  for (let i = 0; i < count; i++) {
-    const row = rows.nth(i);
-
-    const checkbox = row.locator('input[type="checkbox"]');
-
-    const xModel = await checkbox.getAttribute('x-model');
-    if (!xModel) continue;
-
-    const columnKey = xModel.replace('columns.', '');
-    const th = page.locator(`th[x-show="columns.${columnKey}"]`);
-
-    const initialState = await checkbox.isChecked();
-
-    await row.locator('label').click();
+    await toggle.click();
     await page.waitForTimeout(500); // needed for alpine.js x-show
 
-    const expectedStateAfterToggle = !initialState;
-
-    if (expectedStateAfterToggle) {
+    if (!initialState) {
       await expect(th).toBeVisible();
     } else {
       await expect(th).toBeHidden();
     }
 
-    await row.locator('label').click();
+    await toggle.click();
     await page.waitForTimeout(500);
 
     if (initialState) {
@@ -211,7 +195,8 @@ test('change docroot', async ({ page }) => {
   // 3. Open domains page and verify
   await page.goto('/domains');
   const domainRow = page.locator('tr', { hasText: DOMAIN });
-  await expect(domainRow.locator('td', { hasText: NEW_FOLDER })).toBeVisible();
+  // the new row shows the docroot both in its own cell and under the domain name
+  await expect(domainRow.locator('td', { hasText: NEW_FOLDER }).first()).toBeVisible();
   console.log(`docroot change visible in table`);
 
   // 4. Open the domain in browser and verify PHP execution
