@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// NOTE: verify-only -- "Apply" recreates the real swap file (fallocate/dd +
-// mkswap + swapon, briefly disabling swap) and "Drop Swap" runs a real
-// `swapoff -a; swapon -a` against the host. Neither is clicked, matching
-// server_resource_usage.spec.ts's own caution around the same drop-swap
-// operation reachable from that page.
+// "Drop Swap" isn't clicked, swapoff on a busy server can run it out of memory
 
 test('swap page loads with current usage, devices table, and controls', async ({ page }) => {
   await page.goto('/server/swap');
@@ -35,4 +31,35 @@ test('swap page loads with current usage, devices table, and controls', async ({
   await expect(page.getByRole('button', { name: 'Drop Swap' })).toBeVisible();
 
   console.log('swap page loaded with allocation and drop controls');
+});
+
+test('a size under 128 MB is refused before anything runs', async ({ page }) => {
+  await page.goto('/server/swap');
+  await page.locator('#swap_size_gb').fill('0.05');
+  let posted = false;
+  page.on('request', r => { if (r.url().includes('/server/swap/action/')) posted = true; });
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText('Enter a swap size of at least 0.125 GB.')).toBeVisible();
+  expect(posted).toBeFalsy();
+});
+
+test('applying the current size recreates the swap file', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto('/server/swap');
+  // with swap in use the file can't be recreated safely mid-run
+  const used = await page.locator('tbody tr td:nth-child(4)').allInnerTexts();
+  test.skip(used.some(u => parseInt(u) > 0), 'swap is in use');
+  test.skip(used.length === 0, 'no swap file to recreate');
+
+  const size = await page.locator('#swap_size_gb').inputValue();
+  page.once('dialog', d => d.accept());
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText(`Resizing swap to ${size} GB…`)).toBeVisible();
+
+  const done = page.waitForResponse(async r => r.url().endsWith('/server/swap/action-status') && (await r.json()).done, { timeout: 150_000 });
+  const status = await (await done).json();
+  expect(status.success, status.message).toBeTruthy();
+  await page.waitForLoadState('load');
+  await expect(page.locator('#swap_size_gb')).toHaveValue(size, { timeout: 15_000 });
+  console.log(`swap recreated at ${size} GB: ${status.message}`);
 });

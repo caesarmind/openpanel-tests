@@ -74,3 +74,12 @@ test('delete reseller (runs last)', async ({ page }) => {
 
   console.log(`deleted reseller "${username}"`);
 });
+
+test('activity log of a reseller loads', async ({ page }) => {
+  await page.goto('/resellers');
+  const link = page.locator('a[href^="/resellers/activity/"]').first();
+  test.skip(await link.count() === 0, 'No reseller with activity');
+  const href = (await link.getAttribute('href'))!;
+  await page.goto(href);
+  await expect(page.getByRole('heading', { name: /^Activity Log: / })).toBeVisible();
+});

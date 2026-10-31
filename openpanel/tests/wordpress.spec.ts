@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
-import { bulkReply, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
+import { bulkReply, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains, expectInstallSuccess } from '../helpers';
 
 // own domain, the waf, maintenance and remove tests change what it serves
 const domain = 'wordpress.tests.openpanel.org';
@@ -44,8 +44,10 @@ test('install wordpress', async ({ page }) => {
   await page.locator('#installButton').click();
 
   // slower while other workers install apps too
-  await expect(page.getByText(/WordPress installation completed!/i)).toBeVisible({ timeout: 5 * 60_000 });
+  await expect(page.getByText(/WordPress installation completed!/i).and(page.locator(':not(pre)')).first()).toBeVisible({ timeout: 5 * 60_000 });
   console.log('wordpress install completed');
+  await expectInstallSuccess(page);
+  await expect(page.locator('#succUser')).toHaveText(WP_ADMIN.username);
 
   await page.goto('/wordpress');
   await expect(page.locator('body')).toContainText(domain, { timeout: 20000 });

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
-import { ensureDomains } from '../helpers';
+import { ensureDomains, expectInstallSuccess } from '../helpers';
 
 const DOMAIN = 'java.tests.openpanel.org';
 
@@ -57,7 +57,9 @@ test.describe('Java autoinstaller', () => {
 
     await page.locator('#installButton').click();
 
-    await expect(page.getByText(/setup completed/i)).toBeVisible({ timeout: 4 * 60 * 1000 });
+    await expect(page.getByText(/setup completed/i).and(page.locator(':not(pre)'))).toBeVisible({ timeout: 4 * 60 * 1000 });
+
+    await expectInstallSuccess(page);
   });
 
   test('3. verify app appears on /sites', async ({ page }) => {

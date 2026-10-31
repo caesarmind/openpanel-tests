@@ -40,3 +40,16 @@ test('manage crons', async ({ page }) => {
     await expect(firstInput).toHaveValue(originalValue);
   }
 });
+
+test('every job carries its command so a save edits the right line', async ({ page }) => {
+  await page.goto('/server/crons');
+  const rows = page.locator('#crons_table tbody tr[id]');
+  test.skip(await rows.count() === 0, 'no cron jobs on this server');
+
+  for (const row of await rows.all()) {
+    const line = await row.getAttribute('id');
+    const command = await row.locator(`input[name="${line}_command"]`).inputValue();
+    expect(command.trim()).not.toBe('');
+    await expect(row).toContainText(command.trim().split(/\s+/).slice(0, 2).join(' '));
+  }
+});

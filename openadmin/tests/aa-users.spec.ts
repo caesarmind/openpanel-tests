@@ -231,7 +231,7 @@ test('test tabs', async ({ page }) => {
     {
       label: 'Web server:',
       validate: (v: string) =>
-        ['apache', 'nginx', 'openlitespeed', 'openresty'].includes(
+        ['apache', 'nginx', 'openlitespeed', 'litespeed', 'openresty'].includes(
           v.toLowerCase()
         ),
     },

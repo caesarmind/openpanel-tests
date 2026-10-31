@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ensureDomains } from '../helpers';
+import { ensureDomains, expectInstallSuccess } from '../helpers';
 
 const domain = 'website-builder.tests.openpanel.org';
 
@@ -54,7 +54,9 @@ test('website builder', async ({ page }) => {
   // the stream carries the real error, so fail with it instead of a missing toast
   const installLog = await (await installResponse).text();
   expect(installLog, installLog).toContain('Website creation completed!');
-  await expect(page.locator('text=Website creation completed!')).toBeVisible({ timeout: 60000 });
+  await expect(page.getByText('Website creation completed!').and(page.locator(':not(pre)')).first()).toBeVisible({ timeout: 60000 });
+  await expectInstallSuccess(page);
+  await page.locator('#succPrimaryBtn').click();
   await expect(page).toHaveURL(url => url.pathname === '/website-builder/edit' && url.searchParams.get('domain') === domain);
 
   // 2. test edit and save
@@ -98,7 +100,9 @@ test('website builder', async ({ page }) => {
   await page.goto('/website-builder/install');
   await page.locator('#domain_id').selectOption('website-builder.tests.openpanel.org');
   await page.locator('#installButton').click();
-  await expect(page.locator('text=Website creation completed!')).toBeVisible({ timeout: 60000 });
+  await expect(page.getByText('Website creation completed!').and(page.locator(':not(pre)')).first()).toBeVisible({ timeout: 60000 });
+  await expectInstallSuccess(page);
+  await page.locator('#succPrimaryBtn').click();
   await expect(page).toHaveURL(url => url.pathname === '/website-builder/edit' && url.searchParams.get('domain') === domain);
 
   await page.goto('/website?domain=website-builder.tests.openpanel.org');

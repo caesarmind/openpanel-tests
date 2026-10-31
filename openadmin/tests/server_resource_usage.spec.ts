@@ -10,9 +10,19 @@ test('resource usage page shows drop-cache and clear-swap controls', async ({ pa
   await expect(page.locator('#clear-cache')).toBeVisible();
   await expect(page.locator('#clear-swap')).toBeVisible();
 
-  // NOTE: not clicked -- dropping cache/swap affects the live host's memory and could
-  // interfere with other processes/tests running concurrently on shared infrastructure.
+  // clear-swap isn't clicked, cycling swap on a busy server can run it out of memory
   console.log('resource usage page loaded with drop-cache/clear-swap controls present');
+});
+
+test('drop cache frees the page cache', async ({ page }) => {
+  await page.goto('/server/resource-usage');
+  await page.getByRole('tab', { name: 'RAM' }).click();
+  const dropped = page.waitForResponse(r => r.url().endsWith('/server/memory_usage/drop'));
+  await page.locator('#clear-cache').click();
+  const res = await dropped;
+  expect(res.ok()).toBeTruthy();
+  expect((await res.json()).message).toBe('Cache dropped successfully.');
+  await expect(page.getByText('Cache dropped successfully.')).toBeVisible();
 });
 
 test('resource usage history page loads with default line view', async ({ page }) => {

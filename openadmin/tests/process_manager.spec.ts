@@ -127,4 +127,19 @@ test('kill', async ({ page }) => {
     })
   ).toHaveCount(0);
 });
+
+test('pid 1 can be traced but not killed', async ({ page }) => {
+  await page.goto('/server/processes?sort=pid');
+  const init = page.locator('#processes_table tbody tr[data-pid="1"]');
+  await expect(init).toHaveCount(1);
+  await expect(init.getByRole('link', { name: 'Trace' })).toBeVisible();
+  await expect(init.getByRole('button', { name: 'Kill' })).toHaveCount(0);
+
+  // a hand-made post is turned down too
+  const csrf = await page.locator('input[name="csrf_token"]').first().inputValue();
+  const res = await page.request.post('/server/processes/1/kill', { form: { csrf_token: csrf }, headers: { Referer: page.url() } });
+  const body = await res.text();
+  expect(body).not.toContain('killed successfully');
+  expect(body).toMatch(/PID 1 can(&#39;|')t be killed/);
+});
 });

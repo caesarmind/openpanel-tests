@@ -148,3 +148,33 @@ test('disk usage tab shows podman system df output', async ({ page }) => {
   await expect(page.locator('thead').getByText('Reclaimable', { exact: true })).toBeVisible();
   console.log(`disk usage tab listed ${count} row(s)`);
 });
+
+test('check for updates asks the registry about one image', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/services/podman#images');
+  const btn = page.locator('button[onclick^="podmanCheckImageUpdate("]').first();
+  test.skip(await btn.count() === 0, 'No downloaded image to check');
+
+  // jsStr escapes the slashes in the onclick
+  const ref = (await btn.getAttribute('onclick'))!.match(/podmanCheckImageUpdate\('([^']+)'\)/)![1].replace(/\\\//g, '/');
+  const checked = page.waitForResponse(r => r.url().includes('/services/podman/images/check-update?ref='), { timeout: 60_000 });
+  await btn.click();
+  const body = await (await checked).json();
+  if (body.error) {
+    console.log(`registry check for ${ref} failed: ${body.error}`);
+    await expect(page.getByText(`Failed to check ${ref}`)).toBeVisible();
+  } else {
+    expect(typeof body.available).toBe('boolean');
+    // the toast shows before the page reloads with the new badge
+    await expect(page.getByText(`${ref} is `).first()).toBeVisible();
+    console.log(`${ref}: ${body.available ? 'update available' : 'up to date'}`);
+  }
+});
+
+test('vulnerability details of an image load', async ({ page }) => {
+  await page.goto('/services/podman#images');
+  const res = await page.request.get('/services/podman/images/vulnerabilities?ref=' + encodeURIComponent('docker.io/library/alpine:latest'));
+  expect(res.status()).toBeLessThan(500);
+  const body = await res.json();
+  expect(body).toBeTruthy();
+});

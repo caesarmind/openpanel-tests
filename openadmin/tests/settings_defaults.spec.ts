@@ -12,7 +12,9 @@ test('defaults page loads with webserver/database/varnish/php pickers', async ({
   await expect(page.locator('#tour-save-defaults-btn')).toBeVisible();
   await expect(page.getByRole('radiogroup', { name: 'webserver' })).toBeVisible();
   await expect(page.locator('[role="radiogroup"][aria-labelledby="MYSQL_TYPE"]')).toBeVisible();
-  await expect(page.locator('input[name="VARNISH"]')).toBeVisible();
+  // varnish is a toggle, the checkbox it drives is hidden
+  await expect(page.getByRole('switch', { name: 'Enable Varnish Proxy' })).toBeVisible();
+  await expect(page.locator('input[name="VARNISH"]')).toHaveCount(1);
   await expect(page.locator('select[name="DEFAULT_PHP_VERSION"]')).toBeVisible();
 
   console.log('defaults page loaded with all expected pickers');
@@ -61,4 +63,26 @@ test('defaults files editor exposes validate/save workflow', async ({ page }) =>
   await expect(page.locator('#env_file')).not.toHaveValue('');
 
   console.log('defaults files editor loaded with compose/env content');
+});
+
+test('litespeed, percona and varnish show their notes without saving', async ({ page }) => {
+  await page.goto('/settings/defaults');
+
+  const percona = page.locator('[role="radiogroup"][aria-labelledby="MYSQL_TYPE"]').getByRole('radio', { name: /percona/i });
+  await percona.click();
+  await expect(percona).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('input[name="MYSQL_TYPE"][value="percona"]')).toBeChecked();
+  await expect(page.getByText('Percona Server is a drop-in MySQL replacement')).toBeVisible();
+
+  const litespeed = page.getByRole('radiogroup', { name: 'webserver' }).getByRole('radio', { name: /^LiteSpeed/ });
+  test.skip(await litespeed.count() === 0, 'LiteSpeed is not offered on this server');
+  await litespeed.click();
+  await expect(litespeed).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByText('LiteSpeed Enterprise needs a license key')).toBeVisible();
+
+  const varnish = page.getByRole('switch', { name: 'Enable Varnish Proxy' });
+  if (await varnish.getAttribute('aria-checked') !== 'true') await varnish.click();
+  await expect(page.getByText("Varnish isn't recommended with LiteSpeed")).toBeVisible();
+
+  console.log('percona, litespeed and varnish notes shown (not saved)');
 });

@@ -89,8 +89,9 @@ test('create new hosting plan and verify all fields', async ({ page }) => {
 
   await navigateToUserPackages(page);
 
+  // the default plan is "Developer plus" on older installs, "Developer Plus" on newer ones
   await expect(
-    page.getByText('Developer plus', { exact: true })
+    page.getByText(/^Developer plus$/i).first()
   ).toBeVisible();
 
   await page.getByRole('link', { name: 'Create New' }).click();

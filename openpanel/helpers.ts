@@ -84,7 +84,6 @@ export const SUITE_DOMAINS = [
   'matomo.tests.openpanel.org',
   'java.tests.openpanel.org',
   'ruby.tests.openpanel.org',
-  'n8n.tests.openpanel.org',
   'nodejs.tests.openpanel.org',
   'python.tests.openpanel.org',
 ];
@@ -127,13 +126,31 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
 
   await page.locator('#installButton').click();
 
-  const outcome = page.getByText(/installation completed|install process failed/i).first();
+  // the install log <pre> repeats the same text, skip it
+  const outcome = page.getByText(/installation completed|install process failed/i).and(page.locator(':not(pre)')).first();
   await expect(outcome).toBeVisible({ timeout });
   const text = (await outcome.textContent()) ?? '';
   if (!/installation completed/i.test(text)) {
     const log = await response.then(r => r.text(), () => '(installer output not available)');
     expect(text, `install failed, installer output:\n${log}`).toMatch(/installation completed/i);
   }
+  await expectInstallSuccess(page);
+}
+
+// installers stay on the page and show the site + login details instead of redirecting
+export async function expectInstallSuccess(page: Page) {
+  const card = page.locator('#installSuccess');
+  await expect(card).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('#succSiteUrl')).toHaveAttribute('href', /^https:\/\//);
+  await expect(page.locator('#stepsContainer')).toBeHidden();
+  const installPath = new URL(page.url()).pathname;
+  await page.waitForTimeout(3000);
+  expect(new URL(page.url()).pathname, 'install page should not redirect').toBe(installPath);
+
+  const toggle = page.locator('#installLogToggle');
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(page.locator('#installLog')).toContainText(/completed/i);
 }
 
 // bulk actions bar (templates/partials/_bulk.html + static/js/bulk-actions.js), shared by every page that has row checkboxes

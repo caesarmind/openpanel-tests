@@ -88,3 +88,15 @@ test('rename and change-password links navigate to dedicated pages', async ({ pa
 
   console.log(`verified rename/password links for "${username}"`);
 });
+
+test('activity log of an administrator loads and searches', async ({ page }) => {
+  // our own login is always in it
+  const me = process.env.PANEL_USERNAME!;
+  await page.goto(`/administrators/activity/${me}`);
+  await expect(page.getByRole('heading', { name: `Activity Log: ${me}` })).toBeVisible();
+  const search = page.getByPlaceholder('Search by action, IP or date...');
+  await expect(search).toBeVisible();
+  await search.fill('no-such-action-xyz');
+  await search.press('Enter');
+  await expect(page).toHaveURL(/q=no-such-action-xyz/);
+});

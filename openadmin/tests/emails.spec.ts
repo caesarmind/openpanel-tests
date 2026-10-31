@@ -1,15 +1,22 @@
 import { test, expect } from '@playwright/test';
 
+// without the mailserver these pages only show its installer, the "page loads" tests check that
+let mailInstalled: boolean | undefined;
+test.beforeEach(async ({ page }, testInfo) => {
+  if (!/^emails (accounts|queue|settings) /.test(testInfo.title) || testInfo.title.endsWith('page loads')) return;
+  if (mailInstalled === undefined) {
+    mailInstalled = !(await (await page.request.get('/emails/accounts')).text()).includes('Install the mailserver');
+  }
+  test.skip(!mailInstalled, 'mailserver is not installed');
+});
+
 // ─── Accounts ───────────────────────────────────────────────────────────────
 
 test('emails accounts page loads', async ({ page }) => {
   await page.goto('/emails/accounts');
   await expect(page).toHaveURL(/\/emails\/accounts/);
 
-  const mailserverNotInstalled = page.getByText(
-    'opencli email-server install',
-    { exact: false }
-  );
+  const mailserverNotInstalled = page.getByRole('button', { name: 'Install the mailserver' });
 
   const mailserverStopped = page.getByText(/stopped/i).first();
 
@@ -148,7 +155,7 @@ test('emails queue page loads', async ({ page }) => {
   await page.goto('/emails/queue');
   await expect(page).toHaveURL(/emails\/queue/);
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   const emptyQueue  = page.getByText('Queue is empty.');
   const queueTable  = page.locator('table');
 
@@ -202,10 +209,7 @@ test('emails queue bulk actions visible when messages exist', async ({ page }) =
   const retryAllBtn = page.getByRole('button', { name: /retry all/i });
   const deleteAllBtn = page.getByRole('button', { name: /delete all/i });
   const emptyQueue = page.getByText(/^(Queue is empty\.|Nothing here\.)$/);
-  const mailserverNotInstalled = page.getByText(
-    'opencli email-server install',
-    { exact: false }
-  );
+  const mailserverNotInstalled = page.getByRole('button', { name: 'Install the mailserver' });
 
   // Mail server is not installed — valid page state.
   if (await mailserverNotInstalled.isVisible().catch(() => false)) {
@@ -235,7 +239,7 @@ test('emails settings page loads', async ({ page }) => {
   await page.goto('/emails/settings');
   await expect(page).toHaveURL(/emails\/settings/);
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   const heading      = page.getByRole('heading', { name: /email settings/i });
 
   const isNotInstalled = await notInstalled.isVisible().catch(() => false);
@@ -249,7 +253,7 @@ test('emails settings page loads', async ({ page }) => {
 test('emails settings shows mailserver status badge', async ({ page }) => {
   await page.goto('/emails/settings');
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   if (await notInstalled.isVisible().catch(() => false)) {
     test.skip();
     return;
@@ -265,7 +269,7 @@ test('emails settings shows mailserver status badge', async ({ page }) => {
 test('emails settings webmail domain input accepts value', async ({ page }) => {
   await page.goto('/emails/settings');
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   if (await notInstalled.isVisible().catch(() => false)) {
     test.skip();
     return;
@@ -285,7 +289,7 @@ test('emails settings webmail domain input accepts value', async ({ page }) => {
 test('emails settings service toggles are present', async ({ page }) => {
   await page.goto('/emails/settings');
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   if (await notInstalled.isVisible().catch(() => false)) {
     test.skip();
     return;
@@ -313,7 +317,7 @@ test('emails settings service toggles are present', async ({ page }) => {
 test('emails settings storage type select is present', async ({ page }) => {
   await page.goto('/emails/settings');
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   if (await notInstalled.isVisible().catch(() => false)) {
     test.skip();
     return;
@@ -455,7 +459,7 @@ test('emails reports page loads', async ({ page }) => {
   await page.goto('/emails/reports');
   await expect(page).toHaveURL(/emails\/reports/);
 
-  const notInstalled = page.getByText('opencli email-server install');
+  const notInstalled = page.getByRole('button', { name: 'Install the mailserver' });
   const noReports = page.getByText(/no reports yet/i);
 
   const reportsFrame = page.frameLocator('iframe');
@@ -469,4 +473,38 @@ test('emails reports page loads', async ({ page }) => {
 
     expect(visible).toBe(true);
   }).toPass();
+});
+
+// ─── Deliverability ──────────────────────────────────────────────────────────
+
+test('email deliverability checks spf, dkim and dmarc of every domain', async ({ page }) => {
+  const loaded = page.waitForResponse(r => r.url().includes('/emails/deliverability?output=json'), { timeout: 60_000 });
+  await page.goto('/emails/deliverability');
+  await expect(page.getByRole('heading', { name: 'Email Deliverability' })).toBeVisible();
+  const body = await (await loaded).json();
+  expect(Array.isArray(body.domains)).toBeTruthy();
+
+  if (body.domains.length === 0) {
+    await expect(page.getByText('No domains yet.')).toBeVisible();
+    return;
+  }
+  for (const d of body.domains) {
+    for (const rec of ['spf', 'dkim', 'dmarc']) expect(d[rec]).toHaveProperty('status');
+  }
+  const bad = body.domains.filter((d: any) => !d.ok).length;
+  await expect(page.getByText(/domains? needs?|all set|of \d+/i).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#deliverability_table tbody tr', { hasText: body.domains[0].domain }).first()).toBeVisible();
+  console.log(`deliverability: ${bad} of ${body.domains.length} domains need DNS changes`);
+
+  // search hides the rest
+  await page.getByPlaceholder('Search by domain/owner...').fill('no-such-domain-xyz');
+  await expect(page.getByText('No domains match the search.')).toBeVisible();
+});
+
+test('email deliverability check again looks the records up anew', async ({ page }) => {
+  await page.goto('/emails/deliverability');
+  await expect(page.getByRole('button', { name: 'Check again' })).toBeEnabled({ timeout: 60_000 });
+  const again = page.waitForResponse(r => r.url().includes('/emails/deliverability?output=json') && r.url().includes('refresh=1'), { timeout: 60_000 });
+  await page.getByRole('button', { name: 'Check again' }).click();
+  expect((await again).ok()).toBeTruthy();
 });

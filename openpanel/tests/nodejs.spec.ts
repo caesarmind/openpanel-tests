@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { openSiteTab } from '../site-tabs';
-import { ensureDomains } from '../helpers';
+import { ensureDomains, expectInstallSuccess } from '../helpers';
 
 // https://github.com/stefanpejcic/nodejs-helloworld
 
@@ -74,7 +74,9 @@ test.describe('Node.js autoinstaller', () => {
 
     await page.locator('#installButton').click();
 
-    await expect(page.getByText(/setup completed/i)).toBeVisible({ timeout: 120000 });
+    await expect(page.getByText(/setup completed/i).and(page.locator(':not(pre)'))).toBeVisible({ timeout: 120000 });
+
+    await expectInstallSuccess(page);
   });
 
   test('3. verify app appears on /sites', async ({ page }) => {

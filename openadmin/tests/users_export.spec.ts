@@ -1,12 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// NOTE: verify-only for "Generate Backup" -- it shells out to `opencli
-// user-backup --account <username>` for real (a slow, disk-heavy full
-// account archive), and "Delete"/"Download" act on whatever real backups
-// exist, so none of those are clicked. The transfer form is also never
-// submitted (it SSHes the whole account to a remote server). This tab only
-// renders on an Enterprise license, so every test here skips gracefully
-// when it's absent.
+// the export tab only renders on an Enterprise license, so every test here skips without it
+// the transfer form is never submitted, it SSHes the whole account to a remote server
 
 test('export tab (Enterprise only) offers backup and transfer modes', async ({ page }) => {
   await page.goto('/users/testinguser');
@@ -66,4 +61,38 @@ test('transfer mode exposes the SSH transfer form fields', async ({ page }) => {
   await expect(form).toHaveAttribute('action', '/import/transfer/');
 
   console.log('transfer mode form fields present, action targets /import/transfer/');
+});
+
+test('generate, download and delete a full account backup', async ({ page }) => {
+  test.setTimeout(15 * 60_000);
+  await page.goto('/users/testinguser#export');
+  const generate = page.getByRole('button', { name: 'Generate Backup' });
+  test.skip(await page.getByRole('button', { name: /Generate Backup|Backup in progress/ }).count() === 0, 'Export tab not present (non-Enterprise license, or testinguser missing)');
+  test.skip(await page.getByText('Backup in progress…').isVisible(), 'a backup of testinguser is already running');
+
+  const rows = page.locator('table', { hasText: 'Filename' }).locator('tbody tr');
+  await expect(generate).toBeVisible({ timeout: 10_000 });
+  const before = await rows.count();
+
+  await generate.click();
+  await expect(page.getByText('Backup started.')).toBeVisible();
+  // the tab polls every 5s while it runs and lists the archive when it's done
+  await expect(page.getByText('Backup in progress…')).toBeHidden({ timeout: 14 * 60_000 });
+  await expect(rows).toHaveCount(before + 1, { timeout: 30_000 });
+
+  const names = await rows.locator('td:first-child').allInnerTexts();
+  const newest = names.map(n => n.trim()).sort().pop()!;
+  const row = rows.filter({ hasText: newest });
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    row.getByRole('link', { name: 'Download' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe(newest);
+
+  page.once('dialog', d => d.accept());
+  await row.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByText('Backup deleted.')).toBeVisible();
+  await expect(rows).toHaveCount(before);
+  console.log(`generated, downloaded and deleted ${newest}`);
 });
