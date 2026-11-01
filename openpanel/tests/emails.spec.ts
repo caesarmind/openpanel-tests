@@ -26,10 +26,10 @@ async function createEmail(page: Page, username: string, password = PASSWORD) {
   await page.goto('/emails/new');
   await expect(page).toHaveURL(/emails\/new/);
 
-  // Select first available domain
+  // pick the suite's own domain, the account has others and index 1 was whichever sorted second
   const domainSelect = page.locator('select[name="domain"]');
   await expect(domainSelect).toBeVisible();
-  await domainSelect.selectOption({ index: 1 });
+  await domainSelect.selectOption({ label: DOMAIN });
 
   await page.getByRole('textbox', { name: /username/i }).fill(username);
 
@@ -984,7 +984,8 @@ test('default address — set and clear catch-all', async ({ page }) => {
     { timeout: 60_000 },
   );
   await saveButton.click();
-  expect((await saved).ok(), 'catch-all save request failed').toBe(true);
+  // success answers with a 302 back to the page, ok() is only true for 2xx
+  expect((await saved).status(), 'catch-all save request failed').toBeLessThan(400);
 
   /*
    * The save operation may update the page through JavaScript rather than
@@ -1000,7 +1001,10 @@ test('default address — set and clear catch-all', async ({ page }) => {
   }
 
   // Clear catch-all, the Remove button is there once a rule exists, the save above may still be reloading the page
-  await page.goto(`/emails/default/${encodeURIComponent(domain)}`);
+  // and that reload aborts a goto started at the same moment, so retry it
+  await expect(async () => {
+    await page.goto(`/emails/default/${encodeURIComponent(domain)}`);
+  }).toPass({ timeout: 15_000 });
   const deleteButton = page.locator('#delete-btn');
   await expect(deleteButton).toBeVisible();
   page.once('dialog', dialog => dialog.accept());

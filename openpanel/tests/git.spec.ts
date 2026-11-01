@@ -146,7 +146,8 @@ test('new push password', async ({ page }) => {
   await page.goto('/git');
   const row = repoRow(page, LOCAL_REPO);
   await row.getByTitle('Settings').click();
-  const settings = page.locator('tr', { has: page.getByTitle('New push password') });
+  // other local repos on the account have the same button, only the opened one is visible
+  const settings = page.locator('tr', { has: page.getByTitle('New push password') }).filter({ visible: true });
   await expect(settings).toBeVisible();
 
   // first click arms it, second click submits
@@ -192,7 +193,7 @@ test('webhook pulls the repository', async ({ page, request }) => {
   test.setTimeout(90_000);
   await page.goto('/git');
   await repoRow(page, REMOTE_REPO).getByTitle('Settings').click();
-  const hook = page.locator('code', { hasText: '/git-webhook/' }).first();
+  const hook = page.locator('code', { hasText: '/git-webhook/' }).filter({ visible: true }).first();
   await expect(hook).toBeVisible();
   const hookPath = new URL((await hook.textContent())!.trim()).pathname;
 
