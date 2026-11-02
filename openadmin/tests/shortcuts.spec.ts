@@ -23,8 +23,13 @@ test('all keyboard shortcuts work correctly', async ({ page }) => {
       logoutCombo = combo;
       continue;
     }
-    await page.goto(`/dashboard`);
+    // the shortcuts load after the page does, wait for them before pressing
+    await Promise.all([
+      page.waitForResponse(r => r.url().endsWith('/shortcuts.json')),
+      page.goto(`/dashboard`),
+    ]);
     await expect(page).toHaveURL(/dashboard/);
+    await page.waitForTimeout(200);
     await page.locator('body').click();
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
@@ -35,7 +40,11 @@ test('all keyboard shortcuts work correctly', async ({ page }) => {
   }
 
   if (logoutCombo) {
-    await page.goto(`/dashboard`);
+    await Promise.all([
+      page.waitForResponse(r => r.url().endsWith('/shortcuts.json')),
+      page.goto(`/dashboard`),
+    ]);
+    await page.waitForTimeout(200);
     await page.locator('body').click();
     await Promise.all([
       page.waitForURL(/login/, { timeout: 3000 }),

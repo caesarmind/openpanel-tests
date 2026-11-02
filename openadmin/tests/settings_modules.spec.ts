@@ -22,7 +22,7 @@ test('search filters the modules grid', async ({ page }) => {
   const count = await cards.count();
   test.skip(count === 0, 'No modules registered on this environment');
 
-  const firstName = (await cards.first().locator('h4').innerText()).trim();
+  const firstName = (await cards.first().locator('h3').innerText()).trim();
   await page.locator('#tour-modules-filters input[x-model="searchQuery"]').fill(firstName);
   await page.waitForTimeout(150);
 
@@ -33,12 +33,13 @@ test('search filters the modules grid', async ({ page }) => {
 test('category filter buttons toggle active state', async ({ page }) => {
   await page.goto('/settings/modules');
 
-  const communityBtn = page.getByRole('button', { name: 'Community' });
-  await communityBtn.click();
-  await expect(communityBtn).toHaveClass(/bg-indigo-600/);
-
-  await communityBtn.click();
-  await expect(communityBtn).not.toHaveClass(/bg-indigo-600/);
+  const edition = page.getByRole('radiogroup', { name: 'Edition' });
+  const community = edition.getByRole('radio', { name: 'Community' });
+  // the radios are visually hidden, their labels are the visible pills
+  await edition.getByText('Community', { exact: true }).click();
+  await expect(community).toBeChecked();
+  await edition.getByText('Any edition', { exact: true }).click();
+  await expect(community).not.toBeChecked();
 
   console.log('category filter button toggled active state');
 });
@@ -50,11 +51,9 @@ test('a module toggle switch responds to click without saving', async ({ page })
   const count = await cards.count();
   test.skip(count === 0, 'No modules registered on this environment');
 
-  // the visible control is a button that mirrors its state onto a hidden
-  // checkbox via x-model; toggling must go through the button, since the
-  // checkbox itself is hidden and never receives real user interaction.
-  const toggle = cards.first().locator('button[aria-checked]');
-  const checkbox = cards.first().locator('input[type="checkbox"]');
+  // the switch is a visually hidden checkbox inside a label; clicking the label flips it
+  const toggle = cards.first().locator('label:has(input[role="switch"])');
+  const checkbox = cards.first().locator('input[role="switch"]');
   const lockedCard = await cards.first().getAttribute('data-locked');
   test.skip(lockedCard !== null, 'First module is a locked plugin card with no toggle');
 

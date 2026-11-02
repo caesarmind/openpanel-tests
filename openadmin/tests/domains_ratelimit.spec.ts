@@ -30,9 +30,9 @@ test('search narrows the domains', async ({ page }) => {
   const rows = page.locator('#ratelimit_table tbody tr:has(button:text("Edit"))');
   test.skip(await rows.count() === 0, 'No domains on this server');
 
-  await page.getByPlaceholder('Search domains or users...').fill('no-such-domain-xyz');
+  await page.getByPlaceholder('Search domains or users…').fill('no-such-domain-xyz');
   await expect(page.locator('#ratelimit_table tbody tr:has(button:text("Edit")):visible')).toHaveCount(0);
-  await page.getByPlaceholder('Search domains or users...').fill('');
+  await page.getByPlaceholder('Search domains or users…').fill('');
   await expect(page.locator('#ratelimit_table tbody tr:has(button:text("Edit")):visible')).toHaveCount(await rows.count());
 });
 

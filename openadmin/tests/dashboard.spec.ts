@@ -41,15 +41,20 @@ test('dark mode', async ({ page }) => {
 
   await page.locator('#user-btn-info').click();
 
-  await expect(page.locator('#theme-toggle-dark-icon')).toBeVisible();
+  // one switch for dark mode; it starts in whichever theme the browser or last choice picked
+  const toggle = page.locator('#theme-toggle');
+  await expect(toggle).toBeVisible();
+  const startDark = await page.locator('html').evaluate((el) => el.classList.contains('dark'));
 
-  await page.locator('#theme-toggle-dark-icon').click();
-  await expect(page.locator('#theme-toggle-light-icon')).toBeVisible();
-  await expect(page.locator('html')).toHaveClass(/dark/);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', startDark ? 'false' : 'true');
+  if (startDark) await expect(page.locator('html')).not.toHaveClass(/dark/);
+  else await expect(page.locator('html')).toHaveClass(/dark/);
 
-  await page.locator('#theme-toggle-light-icon').click();
-  await expect(page.locator('#theme-toggle-dark-icon')).toBeVisible();
-  await expect(page.locator('html')).not.toHaveClass(/dark/);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', startDark ? 'true' : 'false');
+  if (startDark) await expect(page.locator('html')).toHaveClass(/dark/);
+  else await expect(page.locator('html')).not.toHaveClass(/dark/);
 
   console.log('Dark mode switch is working');
 });
@@ -88,7 +93,7 @@ test('/json/system', async ({ page }) => {
   expect(Number(data.package_updates)).toBeGreaterThanOrEqual(0);
   expect(data.openpanel_version).toMatch(/^\d+\.\d+\.\d+(-[a-z0-9.]+)?$/i); //beta
   expect(data.time).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
-  expect(data.os.toLowerCase()).toMatch(/ubuntu|debian|almalinux|rockylinux|centos/);
+  expect(data.os.toLowerCase()).toMatch(/ubuntu|debian|alma ?linux|rocky ?linux|centos/);
 
   console.log('system info is available:', data);
 });

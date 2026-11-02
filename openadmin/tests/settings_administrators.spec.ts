@@ -63,7 +63,7 @@ test('create, inspect, and delete a new administrator (Enterprise only)', async 
   await row.locator('button.account-menu-btn').click();
   const dropdown = page.locator('#account-menu');
   await expect(dropdown).toBeVisible();
-  await dropdown.getByRole('button', { name: 'Delete' }).click();
+  await dropdown.getByRole('menuitem', { name: 'Delete' }).click();
 
   await expect(page.locator(`button.account-menu-btn[data-user="${testUsername}"]`)).toHaveCount(0);
   console.log(`created and deleted test administrator "${testUsername}"`);
@@ -83,8 +83,8 @@ test('rename and change-password links navigate to dedicated pages', async ({ pa
   await menuBtn.click();
 
   const dropdown = page.locator('#account-menu');
-  await expect(dropdown.getByRole('link', { name: 'Rename' })).toHaveAttribute('href', `/administrators/rename/${username}`);
-  await expect(dropdown.getByRole('link', { name: 'Change Password' })).toHaveAttribute('href', `/administrators/password/${username}`);
+  await expect(dropdown.getByRole('menuitem', { name: 'Rename' })).toHaveAttribute('href', `/administrators/rename/${username}`);
+  await expect(dropdown.getByRole('menuitem', { name: 'Change Password' })).toHaveAttribute('href', `/administrators/password/${username}`);
 
   console.log(`verified rename/password links for "${username}"`);
 });
@@ -94,7 +94,7 @@ test('activity log of an administrator loads and searches', async ({ page }) => 
   const me = process.env.PANEL_USERNAME!;
   await page.goto(`/administrators/activity/${me}`);
   await expect(page.getByRole('heading', { name: `Activity Log: ${me}` })).toBeVisible();
-  const search = page.getByPlaceholder('Search by action, IP or date...');
+  const search = page.getByPlaceholder('Search by action, IP or date…');
   await expect(search).toBeVisible();
   await search.fill('no-such-action-xyz');
   await search.press('Enter');

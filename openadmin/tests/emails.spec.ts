@@ -73,7 +73,7 @@ test('emails accounts search filters rows', async ({ page }) => {
 
   await expect(table).toBeVisible();
 
-  const searchInput = page.getByPlaceholder('Search emails...');
+  const searchInput = page.getByPlaceholder('Search emails…');
   await expect(searchInput).toBeVisible();
 
   // Only actual email account rows.
@@ -186,7 +186,7 @@ test('emails queue refresh button reloads page', async ({ page }) => {
 test('emails queue search filters rows', async ({ page }) => {
   await page.goto('/emails/queue');
 
-  const searchInput = page.locator('input[placeholder="Search queue..."]');
+  const searchInput = page.locator('input[placeholder="Search queue…\"]');
   const isVisible = await searchInput.isVisible().catch(() => false);
   if (!isVisible) {
     test.skip();
@@ -208,7 +208,7 @@ test('emails queue bulk actions visible when messages exist', async ({ page }) =
 
   const retryAllBtn = page.getByRole('button', { name: /retry all/i });
   const deleteAllBtn = page.getByRole('button', { name: /delete all/i });
-  const emptyQueue = page.getByText(/^(Queue is empty\.|Nothing here\.)$/);
+  const emptyQueue = page.getByText(/^\s*(Queue is empty\.|Nothing here\.)\s*$/);
   const mailserverNotInstalled = page.getByRole('button', { name: 'Install the mailserver' });
 
   // Mail server is not installed — valid page state.
@@ -216,6 +216,9 @@ test('emails queue bulk actions visible when messages exist', async ({ page }) =
     await expect(mailserverNotInstalled).toBeVisible();
     return;
   }
+
+  // the queue is fetched after the page loads, wait for it to show either way
+  await expect(emptyQueue.or(retryAllBtn)).toBeVisible({ timeout: 15_000 });
 
   // Empty queue — bulk actions are correctly unavailable.
   if (await emptyQueue.isVisible().catch(() => false)) {
@@ -357,7 +360,7 @@ test('email rate limits search input filters rows', async ({ page }) => {
   await page.goto('/emails/domain-limits');
   await expect(page).toHaveURL(/\/emails\/domain-limits/);
 
-  const searchInput = page.getByPlaceholder('Search domains or users...');
+  const searchInput = page.getByPlaceholder('Search domains or users…');
 
   await expect(searchInput).toBeVisible();
 
@@ -497,7 +500,7 @@ test('email deliverability checks spf, dkim and dmarc of every domain', async ({
   console.log(`deliverability: ${bad} of ${body.domains.length} domains need DNS changes`);
 
   // search hides the rest
-  await page.getByPlaceholder('Search by domain/owner...').fill('no-such-domain-xyz');
+  await page.getByPlaceholder('Search by domain/owner…').fill('no-such-domain-xyz');
   await expect(page.getByText('No domains match the search.')).toBeVisible();
 });
 

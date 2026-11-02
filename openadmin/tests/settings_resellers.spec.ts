@@ -46,7 +46,7 @@ test('edit plans & limits link navigates to update page', async ({ page }) => {
 
   const dropdown = page.locator('#account-menu');
   await expect(
-    dropdown.getByRole('link', { name: 'Edit Plans & Limits' })
+    dropdown.getByRole('menuitem', { name: 'Edit Plans & Limits' })
   ).toHaveAttribute('href', `/resellers/update/${username}`);
 
   console.log(`verified edit plans & limits link for "${username}"`);
@@ -68,7 +68,7 @@ test('delete reseller (runs last)', async ({ page }) => {
   const dropdown = page.locator('#account-menu');
   await expect(dropdown).toBeVisible();
 
-  await dropdown.getByRole('button', { name: 'Delete' }).click();
+  await dropdown.getByRole('menuitem', { name: 'Delete' }).click();
 
   await expect(page.locator(`button.account-menu-btn[data-user="${username}"]`)).toHaveCount(0);
 

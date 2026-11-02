@@ -44,7 +44,7 @@ test('search filters the backups table', async ({ page }) => {
   test.skip(count === 0, 'No backup archives on this environment');
 
   const name = (await rows.first().locator('td').nth(0).innerText()).trim();
-  await page.locator('input[placeholder="Search backups..."]').fill(name);
+  await page.locator('input[placeholder="Search backups…\"]').fill(name);
   await page.waitForTimeout(150);
 
   await expect(rows.filter({ hasText: name }).first()).toBeVisible();

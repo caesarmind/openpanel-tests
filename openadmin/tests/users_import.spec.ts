@@ -12,12 +12,10 @@ test('import account page loads with backup type selector and file picker', asyn
   await expect(page.getByRole('heading', { name: 'Import Account from backup' })).toBeVisible();
   await expect(page.locator('#path')).toBeVisible();
 
-  // Only the OpenPanel option has a real text label; cPanel/CyberPanel are
-  // rendered as logo SVGs with no accessible name, so they're targeted by
-  // their adjacent hidden radio input's value instead.
+  // cPanel and CyberPanel show as logos, so their radios are found by value
   await expect(page.getByRole('radio', { name: 'OpenPanel' })).toBeVisible();
   for (const value of ['cpanel', 'cyberpanel']) {
-    await expect(page.locator(`button[role="radio"]:has(+ input[value="${value}"])`)).toBeVisible();
+    await expect(page.locator(`input[type="radio"][name="backup_type"][value="${value}"]`)).toBeVisible();
   }
 
   await expect(page.locator('#tour-import-view-logs')).toHaveAttribute('href', '/import/cpanel');
@@ -28,9 +26,9 @@ test('import account page loads with backup type selector and file picker', asyn
 test('selecting a non-OpenPanel backup type reveals plan selection', async ({ page }) => {
   await page.goto('/user/import');
 
-  const cyberpanelRadio = page.locator('button[role="radio"]:has(+ input[value="cyberpanel"])');
-  await cyberpanelRadio.click();
-  await expect(cyberpanelRadio).toHaveAttribute('aria-checked', 'true');
+  const cyberpanelRadio = page.locator('input[type="radio"][name="backup_type"][value="cyberpanel"]');
+  await cyberpanelRadio.check();
+  await expect(cyberpanelRadio).toBeChecked();
 
   const planRadios = page.locator('#tour-import-plan');
   const hasPlanSection = (await planRadios.count()) > 0;

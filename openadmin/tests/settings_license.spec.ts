@@ -19,8 +19,8 @@ test('verify/downgrade links are gated on having a key set', async ({ page }) =>
   await page.goto('/license');
 
   const keyValue = await page.locator('#license-key').inputValue();
-  const verifyLink = page.locator('a.btn-verify');
-  const downgradeLink = page.locator('a.btn-downgrade');
+  const verifyLink = page.locator('.btn-verify');
+  const downgradeLink = page.locator('.btn-downgrade');
 
   if (keyValue) {
     await expect(verifyLink).toBeVisible();

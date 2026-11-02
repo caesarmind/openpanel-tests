@@ -32,6 +32,8 @@ test('update proxy and test restart needed msg', async ({ page }) => {
 
   const openpanelStart = Date.now();
   await openpanelBtn.click();
+  // the panel asks in its own dialog, not window.confirm
+  await page.locator('[role="alertdialog"] [data-act="ok"], [role="dialog"] [data-act="ok"]').click();
 
   await expect(
     page.getByRole('alert').filter({ hasText: /successfully restarted service .openpanel./i })
@@ -59,6 +61,7 @@ test('update proxy and test restart needed msg', async ({ page }) => {
     .getByRole('button', { name: 'Restart admin', exact: true })
     .first()
     .click();
+  await page.locator('[role="alertdialog"] [data-act="ok"], [role="dialog"] [data-act="ok"]').click();
   await expect(page.getByRole('alert')).toContainText(/openadmin is restarting/i);
 
   await page.waitForTimeout(5_000)

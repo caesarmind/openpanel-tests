@@ -54,6 +54,8 @@ test('applying the current size recreates the swap file', async ({ page }) => {
   const size = await page.locator('#swap_size_gb').inputValue();
   page.once('dialog', d => d.accept());
   await page.getByRole('button', { name: 'Apply' }).click();
+  // the panel asks in its own dialog, not window.confirm
+  await page.locator('[role="alertdialog"] [data-act="ok"], [role="dialog"] [data-act="ok"]').click();
   await expect(page.getByText(`Resizing swap to ${size} GB…`)).toBeVisible();
 
   const done = page.waitForResponse(async r => r.url().endsWith('/server/swap/action-status') && (await r.json()).done, { timeout: 150_000 });

@@ -9,7 +9,7 @@ test.describe('processes table', () => {
   test('search', async ({ page }) => {
     const table = page.locator('#processes_table');
     const rows = table.locator('tbody tr:visible');
-    const searchInput = page.getByPlaceholder('Search processes...');
+    const searchInput = page.getByPlaceholder('Search processes…');
 
     const initialCount = await rows.count();
 

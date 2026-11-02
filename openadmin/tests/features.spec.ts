@@ -9,7 +9,7 @@ let featureSetName: string;
 test('list sets', async ({ page }) => {
   await page.goto(`/features/`);
   await expect(page).toHaveURL(/features/);
-  await expect(page.getByText('add a new feature')).toBeVisible();
+  await expect(page.getByText('Create a new feature set')).toBeVisible();
   await expect(page.locator('body')).toContainText('default');
 
   console.log(`default features are listed`);

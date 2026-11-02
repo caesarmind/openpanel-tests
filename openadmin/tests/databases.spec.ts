@@ -8,7 +8,7 @@ for (const [engine, path] of [['MySQL', '/databases'], ['MongoDB', '/databases/m
     await page.goto(`${path}?refresh=1`);
     await expect(page.getByRole('heading', { name: 'Databases', level: 1 })).toBeVisible();
     await expect(page.getByText('Unable to read users from the database.')).toHaveCount(0);
-    await expect(page.getByPlaceholder('Search by database/owner...')).toBeVisible();
+    await expect(page.getByPlaceholder('Search by database/owner…')).toBeVisible();
 
     const problems = await page.getByText("Couldn't list databases for").count();
     const rows = await page.locator('table tbody tr:has(a[href^="/users/"])').count();
@@ -22,9 +22,9 @@ test('search hides databases that do not match', async ({ page }) => {
   const count = await rows.count();
   test.skip(count === 0, 'No MySQL databases on this server');
 
-  await page.getByPlaceholder('Search by database/owner...').fill('no-such-db-xyz');
+  await page.getByPlaceholder('Search by database/owner…').fill('no-such-db-xyz');
   await expect(page.locator('table tbody tr:has(a[href^="/users/"]):visible')).toHaveCount(0);
-  await page.getByPlaceholder('Search by database/owner...').fill('');
+  await page.getByPlaceholder('Search by database/owner…').fill('');
   await expect(page.locator('table tbody tr:has(a[href^="/users/"]):visible')).toHaveCount(count);
 });
 
@@ -36,10 +36,10 @@ test('export downloads an sql dump', async ({ page }) => {
 
   const form = row.locator('form[action="/databases/export"]');
   const name = await form.locator('input[name="database"]').inputValue();
-  await row.getByRole('button', { name: 'Export' }).click();
+  await row.getByRole('button', { name: /More actions for/ }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 90_000 }),
-    form.getByRole('button', { name: /SQL \(\.sql\)/ }).click(),
+    form.getByRole('menuitem', { name: 'Export as .sql', exact: true }).click(),
   ]);
   expect(download.suggestedFilename()).toContain(name);
   console.log(`exported ${download.suggestedFilename()}`);
@@ -50,7 +50,8 @@ test('import dialog opens for a database and closes without importing', async ({
   const row = page.locator('table tbody tr:has(form[action="/databases/export"])').first();
   test.skip(await row.count() === 0, 'No MySQL databases on this server');
 
-  await row.getByRole('button', { name: 'Import' }).click();
+  await row.getByRole('button', { name: /More actions for/ }).click();
+  await row.getByRole('menuitem', { name: 'Import', exact: true }).click();
   const dialog = page.locator('div.fixed:has(h3:text("Import into"))');
   await expect(dialog.getByRole('heading', { name: /Import into/ })).toBeVisible();
   // without a file nothing is sent
@@ -69,14 +70,15 @@ test('a database takes its own export back through import', async ({ page }) => 
   // the same dump goes back in, so the database ends up as it was
   const form = row.locator('form[action="/databases/export"]');
   const name = await form.locator('input[name="database"]').inputValue();
-  await row.getByRole('button', { name: 'Export' }).click();
+  await row.getByRole('button', { name: /More actions for/ }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 90_000 }),
-    form.getByRole('button', { name: /Gzip/ }).click(),
+    form.getByRole('menuitem', { name: 'Export as .sql.gz' }).click(),
   ]);
   const file = await download.path();
 
-  await row.getByRole('button', { name: 'Import' }).click();
+  await row.getByRole('button', { name: /More actions for/ }).click();
+  await row.getByRole('menuitem', { name: 'Import', exact: true }).click();
   const dialog = page.locator('div.fixed:has(h3:text("Import into"))');
   await dialog.locator('input[type="file"]').setInputFiles({ name: download.suggestedFilename(), mimeType: 'application/gzip', buffer: require('fs').readFileSync(file) });
   const imported = page.waitForResponse(r => r.url().includes('/databases/import'), { timeout: 150_000 });

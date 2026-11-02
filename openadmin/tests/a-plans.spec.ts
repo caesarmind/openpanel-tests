@@ -317,7 +317,7 @@ test('search hosting plans', async ({ page }) => {
   await expect(page).toHaveURL(/dashboard/);
 
   await navigateToUserPackages(page);
-  await page.getByRole('searchbox', { name: 'Search by plan name...' }).fill('Standard');
+  await page.getByRole('searchbox', { name: 'Search by plan name…' }).fill('Standard');
   
   const row = page.locator('tr:not([data-cluster-node])').filter({ hasText: 'Standard' });
   await expect(row).toHaveCount(1);

@@ -1079,13 +1079,19 @@ test.describe('mutating operations (RUN_MUTATING=1 only)', () => {
   test('user lifecycle: create -> suspend -> unsuspend -> delete', async () => {
     requireToken();
 
+    // newer installs have no default_plan_apache, use whichever plan the server has
+    const plansBody: any = await getOk('/api/plans');
+    const plans = Array.isArray(plansBody) ? plansBody : plansBody?.plans ?? plansBody?.data ?? [];
+    const planName = plans.find((p: any) => p?.name)?.name;
+    test.skip(!planName, 'no hosting plan to create the user on');
+
     const createRes = await api.post('/api/users', {
       headers: authHeaders(),
       data: {
         email: 'pwtest@example.com',
         username: TEST_USER,
         password: `Pw!${Date.now()}`,
-        plan_name: 'default_plan_apache',
+        plan_name: planName,
       },
       timeout: 300_000,
     });

@@ -59,9 +59,11 @@ test('search filters the rows and survives a refresh', async ({ page }) => {
   const count = await rows(page).count();
   test.skip(count < 2, 'not enough tasks to filter');
 
-  const command = (await rows(page).first().getAttribute('data-command'))!;
-  const word = command.split(' ')[1];
-  await page.getByPlaceholder('Search tasks...').fill(word);
+  // pick a word from the first command that not every task contains, so the filter has to drop rows
+  const commands = await rows(page).evaluateAll(trs => trs.map(tr => ((tr as HTMLElement).dataset.command || '').toLowerCase()));
+  const word = commands[0].split(/\s+/).find(w => w.length > 2 && commands.some(c => !c.includes(w)));
+  test.skip(!word, 'every task shares the same words');
+  await page.getByPlaceholder('Search tasks…').fill(word!);
 
   const visible = page.locator('#tasks_tbody tr[data-command]:visible');
   await expect.poll(() => visible.count()).toBeLessThan(count);
@@ -71,7 +73,7 @@ test('search filters the rows and survives a refresh', async ({ page }) => {
   expect(left).toBeGreaterThan(0);
   expect(left).toBeLessThan(count);
   for (const c of await visible.evaluateAll(trs => trs.map(tr => (tr as HTMLElement).dataset.command || ''))) {
-    expect(c.toLowerCase()).toContain(word.toLowerCase());
+    expect(c.toLowerCase()).toContain(word!);
   }
 });
 

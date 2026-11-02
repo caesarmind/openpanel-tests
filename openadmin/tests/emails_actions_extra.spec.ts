@@ -57,14 +57,15 @@ test('set quota for an account, then revert to its original value', async ({ pag
   test.skip(!row, 'No email accounts available on this environment');
 
   const emailText = await rowEmail(row!);
-  const originalQuotaText = (await row!.locator('span[x-text="quota"]').innerText()).trim();
+  // the cell shows a formatted size, the raw quota string is kept in data-quota
+  const originalQuotaText = ((await row!.locator('span[data-quota]').getAttribute('data-quota')) || '').trim();
   test.skip(!/^\d/.test(originalQuotaText), 'Account has no numeric quota to safely revert to');
 
   await applyQuota(page, emailText, '999M');
 
   await page.goto('/emails/accounts');
   const updatedRow = page.locator('tbody tr').filter({ has: page.locator(`button[aria-label="Actions for ${emailText}"]`) }).first();
-  await expect(updatedRow.locator('span[x-text="quota"]')).toContainText('999M', { timeout: 10_000 });
+  await expect(updatedRow.locator('span[data-quota]')).toHaveAttribute('data-quota', /999M/, { timeout: 10_000 });
 
   // revert to original quota
   await applyQuota(page, emailText, originalQuotaText);
@@ -98,7 +99,8 @@ test('delete account modal requires explicit confirm (not confirmed)', async ({ 
   // the bulk delete dialog has the same wording, so look inside the single delete one
   const modal = page.locator('[x-show="showDeleteModal"]');
   await expect(modal.getByText('Permanently delete')).toBeVisible();
-  await expect(modal.getByText(emailText)).toBeVisible();
+  // the address is in the heading and again in the type-to-confirm line
+  await expect(modal.getByRole('heading', { name: emailText })).toBeVisible();
   await modal.getByRole('button', { name: 'Cancel' }).click();
 
   console.log(`delete-account confirm modal shown for ${emailText} and cancelled`);

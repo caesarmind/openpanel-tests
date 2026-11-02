@@ -156,13 +156,10 @@ test('test tabs', async ({ page }) => {
 
   // Helper to find an information row by its label.
   function getRow(labelText: string) {
-    return overviewPanel.locator('.rounded-lg').filter({
-      has: page.locator('span.text-sm', {
-        hasText: new RegExp(
-          `^\\s*${labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
-          'i'
-        ),
-      }),
+    // rows are rounded-md cards; labels may or may not end in a colon
+    const label = labelText.replace(/:$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return overviewPanel.locator('.rounded-md, .rounded-lg').filter({
+      has: page.locator('span', { hasText: new RegExp(`^\\s*${label}:?\\s*$`, 'i') }),
     }).first();
   }
 
@@ -247,10 +244,10 @@ test('test tabs', async ({ page }) => {
     },
     {
       label: 'Setup time:',
-      // Current UI uses ISO timestamps such as:
-      // 2026-09-08T12:07:32Z
+      // ISO (2026-09-08T12:07:32Z) or the panel's display format (08.09.2026 12:07:32)
       validate: (v: string) =>
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(v),
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(v) ||
+        /^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/.test(v),
     },
   ];
 
@@ -477,11 +474,8 @@ test('delete user', async ({ page }) => {
 
   const deleteButton = page.getByRole('button', {name: /delete account permanently/i,});
 
-  await expect(
-  page.getByRole('button', { name: /delete account permanently/i })
-).toHaveCount(0); 
-
-  //await expect(deleteButton).toBeDisabled(); nije radio ovaj check pa sam ga zamenio sa ovim iznad
+  // the button stays disabled until the username is typed
+  await expect(deleteButton).toBeDisabled();
 
   // https://github.com/stefanpejcic/OpenPanel/issues/948
   await confirmationInput.click();

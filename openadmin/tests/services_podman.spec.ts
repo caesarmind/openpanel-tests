@@ -23,6 +23,9 @@ test('info tab shows podman info output by default', async ({ page }) => {
   await page.goto('/services/podman');
 
   const infoPanel = page.getByRole('tabpanel').first();
+  // the raw output sits in a collapsible block under the summary
+  const raw = infoPanel.locator('details');
+  if ((await raw.count()) && (await raw.getAttribute('open')) === null) await raw.locator('summary').click();
   await expect(infoPanel.locator('pre')).toBeVisible();
 
   const text = (await infoPanel.locator('pre').innerText()).trim();
@@ -61,7 +64,7 @@ test('search filters the images table', async ({ page }) => {
   const repo = (await rows.first().locator('td').nth(0).innerText()).trim();
   test.skip(repo === '' || repo === '<none>', 'First image row has no usable repository name');
 
-  await page.locator('input[placeholder="Search images..."]').fill(repo);
+  await page.locator('input[placeholder="Search images…\"]').fill(repo);
   await page.waitForTimeout(150);
 
   await expect(rows.filter({ hasText: repo }).first()).toBeVisible();
@@ -82,7 +85,8 @@ test('each downloaded, unused image exposes a Delete control; in-use images do n
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
     const usageText = await row.locator('td').nth(4).innerText();
-    const deleteBtn = row.getByRole('button', { name: 'Delete' });
+    // Delete lives in the row's actions menu, which stays in the DOM while closed
+    const deleteBtn = row.locator('[role="menuitem"]', { hasText: 'Delete' });
     const hasDelete = (await deleteBtn.count()) > 0;
 
     if (usageText.includes('Unused')) {

@@ -35,9 +35,9 @@ test('search hides sites that do not match', async ({ page }) => {
   const count = await rows.count();
   test.skip(count === 0, 'No websites in Site Manager');
 
-  await page.getByPlaceholder('Search sites, owners, domains...').fill('no-such-site-xyz');
+  await page.getByPlaceholder('Search sites, owners, domains…').fill('no-such-site-xyz');
   await expect(page.locator('#websites_table tbody tr:has(button[aria-label^="Actions for"]):visible')).toHaveCount(0);
-  await page.getByPlaceholder('Search sites, owners, domains...').fill('');
+  await page.getByPlaceholder('Search sites, owners, domains…').fill('');
   await expect(page.locator('#websites_table tbody tr:has(button[aria-label^="Actions for"]):visible')).toHaveCount(count);
 });
 
