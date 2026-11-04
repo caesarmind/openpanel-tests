@@ -3,6 +3,10 @@ import { ensureDomains, withProjectPage } from '../../helpers';
 
 const DOMAIN = 'shared.tests.openpanel.org';
 
+// the new theme has a switch labelled Click to Enable/Disable instead of a text button
+const serviceToggle = (page: Page, label: string) =>
+  page.getByRole('button', { name: label }).or(page.getByRole('switch', { name: label }));
+
 test.beforeAll(async ({ browser }, testInfo) => {
   await ensureDomains(browser, testInfo, DOMAIN);
 });
@@ -14,7 +18,7 @@ test.afterAll(async ({ browser }, testInfo) => {
     await page.goto('/cache/varnish');
     const status = page.locator('#service-page-status');
     if ((await status.textContent())?.trim() !== 'Disabled') {
-      await page.getByRole('button', { name: 'Click to Disable' }).click();
+      await serviceToggle(page, 'Click to Disable').click();
       await expect(status).toHaveText('Disabled', { timeout: 40_000 });
     }
   });
@@ -42,7 +46,7 @@ test('enable varnish', async ({ page }) => {
   await page.goto('/cache/varnish');
   const status = page.locator('#service-page-status');
   await expect(status).toHaveText('Disabled');
-  await page.getByRole('button', { name: 'Click to Enable' }).click();
+  await serviceToggle(page, 'Click to Enable').click();
   // Enabling stops/recreates both the webserver and varnish containers,
   // which routinely takes longer than the 5s default assertion timeout.
   await expect(status).not.toHaveText('Disabled', { timeout: 40_000 });
@@ -80,7 +84,8 @@ test('should display container log and show Varnish Cache & Container stats', as
   await page.goto('/cache/varnish');
   const logButton = page.locator('#service-log');
   await expect(logButton).toBeVisible();
-  await expect(logButton).toHaveText('View container log');
+  // the new theme loads the log on its own and relabels this button to Refresh
+  await expect(logButton).toHaveText(/^(View container log|Refresh)$/);
   await logButton.click();
   const logContainer = page.locator('#log-container');
   await expect(logContainer).toBeVisible({ timeout: 15_000 });
@@ -93,29 +98,34 @@ test('should display container log and show Varnish Cache & Container stats', as
   await expect(varnishCacheSection).toBeVisible();
   
   const expectedMetrics = ['Hit Ratio', 'Hits', 'Misses', 'Pass', 'Requests', 'Backend Requests'];
+  // the new theme lists the stats as dt/dd pairs
   for (const metric of expectedMetrics) {
-    const label = page.locator('span.text-sm').filter({ hasText: metric }).first();
+    const label = page.locator('span.text-sm, [x-data="varnishStats()"] dt').filter({ hasText: metric }).first();
     await expect(label).toBeVisible();
   }
-  
-  const metricValues = page.locator('[x-data="varnishStats()"] span.font-medium');
+
+  const metricValues = page.locator('[x-data="varnishStats()"] span.font-medium, [x-data="varnishStats()"] dd');
   const count = await metricValues.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
     await expect(metricValues.nth(i)).not.toHaveText('--', { timeout: 10_000 });
   }
   
-  const containerSection = page.locator('h2:has-text("Container")');
+  // the new theme has no Container heading, the stat cards are a section labelled Container
+  const containerSection = page.locator('h2:has-text("Container")').or(page.getByRole('region', { name: 'Container', exact: true }));
   await expect(containerSection).toBeVisible();
   const containerStats = page.locator('#service-page-stats');
   await expect(containerStats).toBeVisible();
   const expectedContainerLabels = ['CPU Usage', 'Memory Usage', 'Memory %', 'Network I/O', 'PIDs'];
   for (const label of expectedContainerLabels) {
-    const labelEl = containerStats.locator('span.text-sm').filter({ hasText: label });
+    // the new theme shows memory % in the note of the Memory Usage card
+    const labelEl = label === 'Memory %' && await containerStats.locator('.op-kpi').count()
+      ? containerStats.locator('.op-kpi', { hasText: 'Memory Usage' }).locator('.op-kpi-note').filter({ hasText: /%|N\/A/ })
+      : containerStats.locator('span.text-sm, .op-kpi-label').filter({ hasText: label });
     await expect(labelEl).toBeVisible();
   }
-  
-  const containerValues = containerStats.locator('span.font-medium');
+
+  const containerValues = containerStats.locator('span.font-medium, .op-kpi-value, [data-stat]');
   const containerCount = await containerValues.count();
   expect(containerCount).toBeGreaterThan(0);
   for (let i = 0; i < containerCount; i++) {
@@ -150,7 +160,7 @@ test('disable varnish', async ({ page }) => {
   await page.goto('/cache/varnish');
   const status = page.locator('#service-page-status');
   await expect(status).not.toHaveText('Disabled');
-  await page.getByRole('button', { name: 'Click to Disable' }).click();
+  await serviceToggle(page, 'Click to Disable').click();
   // Disabling stops/removes both the webserver and varnish containers then
   // recreates the webserver, which routinely takes longer than the 5s
   // default assertion timeout.

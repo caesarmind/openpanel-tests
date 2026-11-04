@@ -1,4 +1,4 @@
-import { test, expect, type Browser } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { bulkRun, bulkSelectKeys } from '../helpers';
 
 // a separate login whose token we know, so a terminate never hits the session the specs run on
@@ -11,8 +11,15 @@ async function throwawayLogin(browser: Browser) {
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(page).toHaveURL(/.*dashboard/);
   await page.goto(`${process.env.BASE_URL}/account/sessions`);
-  const action = await page.locator('#sessions-table tbody tr', { hasText: 'This session' }).locator('form').getAttribute('action');
-  return { context, page, token: action!.split('/').pop()! };
+  return { context, page, token: await ownSessionToken(page) };
+}
+
+// the new theme has no terminate form on your own row, the bulk checkbox carries the token in both themes
+async function ownSessionToken(page: Page) {
+  const token = await page.locator('#sessions-table tbody tr', { hasText: 'This session' })
+    .locator('input.bulk-select-box').getAttribute('value');
+  expect(token).toBeTruthy();
+  return token!;
 }
 
 test('active sessions: search, activity logs, terminate session', async ({ page, request, browser }) => {
@@ -83,12 +90,10 @@ test('active sessions: search, activity logs, terminate session', async ({ page,
 
   // other workers log in too, so take the token from the row the throwaway login sees as its own
   await extraPage.goto(`${process.env.BASE_URL}/account/sessions`);
-  const throwawayAction = await extraPage.locator('#sessions-table tbody tr', { hasText: 'This session' })
-    .locator('form').getAttribute('action');
-  expect(throwawayAction).toBeTruthy();
+  const throwawayToken = await ownSessionToken(extraPage);
 
   await page.reload();
-  await table.locator(`form[action="${throwawayAction}"]`).getByRole('button', { name: /terminate/i }).click();
+  await table.locator(`form[action="/account/sessions/terminate/${throwawayToken}"]`).getByRole('button', { name: /terminate/i }).click();
 
   await expect(
     page.getByText('Session terminated successfully.')

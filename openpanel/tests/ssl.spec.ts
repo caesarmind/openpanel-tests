@@ -135,7 +135,7 @@ test('add custom ssl', async ({ page }) => {
   ).toBeVisible();
 
   // 3. Verify the certificate panel contains the custom certificate and key
-  await page.locator('a#view-cert').click();
+  await page.locator('#view-cert').click();
 
   const certCode = page.locator('pre#certCode');
   await expect(certCode).toBeVisible();
@@ -186,7 +186,7 @@ test('switch back to Lets Encrypt', async ({ page }) => {
   await expect(page.getByText(/US, Let's Encrypt/i).first()).toBeVisible();
 
   // 2. verify panel shows it
-  await page.locator('a#view-cert').click();
+  await page.locator('#view-cert').click();
   const certCode = page.locator('pre#certCode');
   await expect(certCode).toBeVisible();
 

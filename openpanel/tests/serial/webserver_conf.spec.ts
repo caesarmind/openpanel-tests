@@ -38,6 +38,16 @@ test('save webserver configuration', async ({ page }) => {
 
   const saveBtn = page.getByRole('button', { name: /save|apply/i });
   await expect(saveBtn).toBeVisible();
+
+  // the new theme keeps Save disabled until the file changes, so set the same content again to save it unchanged
+  await expect(async () => {
+    await page.evaluate(() => {
+      const cm = (document.querySelector('.CodeMirror') as any)?.CodeMirror;
+      if (cm) cm.setValue(cm.getValue());
+    });
+    await expect(saveBtn).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 15000 });
+
   await saveBtn.click();
 
   await expect(page.locator('body')).toContainText(/saved|updated|restarted|success/i, { timeout: 30000 });

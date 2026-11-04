@@ -11,7 +11,8 @@ test('logout', async ({ page }) => {
   await expect(page).toHaveURL(/.*dashboard/);
 
   // under load the menu's script can bind after the first click, so open it until the link shows
-  const signOut = page.getByRole('link', { name: 'Sign out' });
+  // the new sidebar menu marks the link role="menuitem"
+  const signOut = page.getByRole('link', { name: 'Sign out' }).or(page.getByRole('menuitem', { name: 'Sign out' }));
   await expect(async () => {
     if (!(await signOut.isVisible())) await page.locator('#user-btn-info').click();
     await expect(signOut).toBeVisible({ timeout: 2000 });

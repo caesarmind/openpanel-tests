@@ -49,6 +49,13 @@ test.describe('Process Manager', () => {
 
         console.log(`Killing process: container=${killedName}, PID=${killedPid}`);
 
+        // the new theme keeps Terminate in the row's actions menu and asks to confirm
+        const rowMenu = targetRow.locator('td.op-cell-menu > button');
+        if (await rowMenu.count()) {
+            await rowMenu.click();
+            page.once('dialog', dialog => dialog.accept());
+        }
+
         const terminateBtn = targetRow!
             .getByRole('button', { name: 'Terminate' });
 
@@ -81,7 +88,7 @@ test.describe('Process Manager', () => {
         await page.goto('/process-manager');
         await page.waitForLoadState('networkidle');
 
-        await page.getByRole('link', { name: 'Refresh Processes' }).click();
+        await page.getByRole('link', { name: /^Refresh( Processes)?$/ }).click();
         await page.waitForLoadState('networkidle');
 
         const allPids = await page

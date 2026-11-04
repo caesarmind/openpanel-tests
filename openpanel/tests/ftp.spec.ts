@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import * as ftp from 'basic-ftp';
 import { Readable, Writable } from 'stream';
 import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomains } from '../helpers';
@@ -48,6 +48,16 @@ async function getFTPCount(page: Page): Promise<number> {
   return parseInt(match[1], 10);
 }
 
+// the new form has #username and a folder box under /var/www/html/, the old one #new_ftp_username and the full path
+async function fillNewAccount(page: Page, user: string) {
+  await page.locator('#new_ftp_username').or(page.locator('#username')).fill(user);
+  await page.locator('#domain').selectOption({ label: FTP_DOMAIN });
+  await page.locator('#password').fill(FTP_PASS);
+  const folder = page.locator('#ftp_folder');
+  if (await folder.count()) await folder.fill(FTP_PATH.replace(/^\/var\/www\/html\//, ''));
+  else await page.locator('#new_user_path').fill(FTP_PATH);
+}
+
 test('create account', async ({ page }) => {
   // 1. check current user count
   await page.goto('/dashboard');
@@ -57,10 +67,7 @@ test('create account', async ({ page }) => {
   // 1. create account
   await page.goto('/ftp/new');
   await expect(page.getByRole('heading', { name: 'New FTP Account' })).toBeVisible();
-  await page.locator('#new_ftp_username').fill(FTP_USER);
-  await page.locator('#domain').selectOption({ label: FTP_DOMAIN });
-  await page.locator('#password').fill(FTP_PASS);
-  await page.locator('#new_user_path').fill(FTP_PATH);
+  await fillNewAccount(page, FTP_USER);
   await page.getByRole('button', { name: /Create Account/i }).click();
   await expect(page.getByText(/created successfully/i)).toBeVisible();
 
@@ -320,10 +327,7 @@ test('bulk actions', async ({ page }) => {
 
   for (const account of accounts) {
     await page.goto('/ftp/new');
-    await page.locator('#new_ftp_username').fill(account.split('@')[0]);
-    await page.locator('#domain').selectOption({ label: FTP_DOMAIN });
-    await page.locator('#password').fill(FTP_PASS);
-    await page.locator('#new_user_path').fill(FTP_PATH);
+    await fillNewAccount(page, account.split('@')[0]);
     await page.getByRole('button', { name: /Create Account/i }).click();
     await expect(page.getByText(/created successfully/i)).toBeVisible();
   }

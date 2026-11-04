@@ -147,7 +147,8 @@ test('server info page', async ({ page }) => {
     await page.goto('/server/info#plan');
   }
 
-  await expect(page.locator('tbody[data-tab="plan"]')).toBeVisible();
+  // the new theme shows the plan as its own section headed "Hosting Plan" instead of a table body
+  await expect(page.locator('tbody[data-tab="plan"]').or(page.getByRole('heading', { name: 'Hosting Plan', level: 1 }))).toBeVisible();
 
   // Compare Hosting Plan UI with API
   await expect(page.locator('#plan_description'))

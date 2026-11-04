@@ -25,7 +25,7 @@ test('table, clipboard, activity link, search filter and dashboard IP', async ({
   const ipText = (await firstRow
     .locator('td')
     .first()
-    .locator('.text-base.font-semibold')
+    .locator('.text-base.font-semibold, .op-login-ip > b')
     .textContent())?.trim();
   expect(ipText).toContain(expectedIp);
 
@@ -37,9 +37,11 @@ test('table, clipboard, activity link, search filter and dashboard IP', async ({
       (window as any).__copied = el?.value?.slice(el.selectionStart, el.selectionEnd) || String(document.getSelection());
     });
   });
-  await firstRow.locator('.copy-ip-icon').click();
-  await expect(firstRow.locator('.bi-clipboard-check-fill')).toBeVisible();
-  expect(await page.evaluate(() => (window as any).__copied)).toBe(expectedIp);
+  await firstRow.locator('.copy-ip-icon, .op-login-copy').click();
+  // the new theme shows a "Copied <ip>" toast instead of swapping the icon
+  await expect(firstRow.locator('.bi-clipboard-check-fill').or(page.locator('#toast-container').getByText(`Copied ${expectedIp}`))).toBeVisible();
+  // it also writes with navigator.clipboard where that exists, which fires no copy event, so read the clipboard back then
+  expect(await page.evaluate(async () => (window as any).__copied || (navigator.clipboard ? await navigator.clipboard.readText() : ''))).toBe(expectedIp);
 
   const activityLink = firstRow.locator('a', { hasText: 'View activity log' });
   await expect(activityLink).toHaveAttribute('href', `/account/activity?search=${expectedIp}`);

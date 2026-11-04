@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { randomBytes } from 'crypto';
 import dns from 'dns';
 import { addDomain, bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, hasDomain, openColumnToggles, waitForCert, withLock } from '../../helpers';
@@ -89,7 +89,8 @@ test('verify files created for a new domain', async ({ page }) => {
 
   // vhosts file created
   await page.goto(`/domains/vhosts?domain=${DOMAIN}`);
-  await expect(page.locator('#editor')).toContainText('index.php');  
+  // the new theme's config editor keeps the file in a textarea without the #editor id
+  await expect(page.locator('#editor, textarea[name="vhost_content"]')).toContainText('index.php');
   console.log(`vhost file exists`);
 
   // SSL generation, the domain was only just added so give it time
@@ -248,11 +249,31 @@ async function txtRecords(name: string): Promise<string> {
   }
 }
 
+// the new theme shows the add form right away, there's no New Record button
+async function openAddRecord(page: Page) {
+  const button = page.locator('#AddDNSRecord');
+  if (await button.count()) await button.click();
+}
+
+// the new theme has no Type column, the type is a tag beside the name and TTL comes after the content
+async function dnsCells(row: Locator) {
+  if (await row.page().locator('#dns-records-table').count()) {
+    return { ttl: row.locator('td.is-num'), type: row.locator('.op-type'), value: row.locator('.op-dns-value') };
+  }
+  return { ttl: row.locator('td').nth(2), type: row.locator('td').nth(3), value: row.locator('td').nth(4) };
+}
+
+// the new theme keeps a row's Edit and Delete in its actions menu
+async function openRowMenu(row: Locator) {
+  const menu = row.locator('td.op-cell-menu > button');
+  if (await menu.count()) await menu.click();
+}
+
 test('add dns record', async ({ page }) => {
   await page.goto(`/domains/edit-dns-zone/${domain}`);
 
   // 1. create random TXT record
-  await page.locator('#AddDNSRecord').click();
+  await openAddRecord(page);
   const addRow = page.locator('#addRecordRow');
   await expect(addRow).toBeVisible();
   await addRow.locator('input[name="Name"]').fill(domain);
@@ -264,8 +285,9 @@ test('add dns record', async ({ page }) => {
   // 2. validate on page
   const newRow = page.locator('tr.domain_row', { hasText: recordValue });
   await expect(newRow).toBeVisible();
-  await expect(newRow.locator('td').nth(3)).toHaveText('TXT');
-  await expect(newRow.locator('td').nth(4)).toContainText(recordValue);
+  const cells = await dnsCells(newRow);
+  await expect(cells.type).toHaveText('TXT');
+  await expect(cells.value).toContainText(recordValue);
 
   // 3. validate against the nameserver
   await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).toContain(recordValue);
@@ -279,6 +301,7 @@ test('edit dns record', async ({ page }) => {
   // 1. find and edit the record created in the previous test
   const newRow = page.locator('tr.domain_row', { hasText: recordValue });
   await expect(newRow).toBeVisible();
+  await openRowMenu(newRow);
   await newRow.locator('button:has-text("Edit"), button:has-text("Edit"), button:has-text("Edit")').click();
 
   const field4 = page.locator('[name="field4"]').first();
@@ -286,12 +309,13 @@ test('edit dns record', async ({ page }) => {
     await field4.fill(`${recordValue}-edited`);
   }
 
-  const editedRow = page.locator('tr.domain_row').filter({ has: page.locator('input#Record').filter({ hasValue: `${recordValue}-edited` }) });
+  // the new theme's edit input has no #Record id, both have name="field4"
+  const editedRow = page.locator('tr.domain_row').filter({ has: page.locator('input[name="field4"]').filter({ hasValue: `${recordValue}-edited` }) });
   await expect(editedRow).toBeVisible();  
   await editedRow.locator('button:has-text("Save"), button:has-text("Save"), button:has-text("Save")').click();
   
-  // 2. verify row is changed
-  await expect(page.locator('tr.domain_row', { hasText: recordValue })).toHaveCount(0);
+  // 2. verify row is changed, the edited value starts with the old one so only an old value not followed by -edited counts
+  await expect(page.locator('tr.domain_row', { hasText: new RegExp(`${recordValue}(?!-edited)`) })).toHaveCount(0);
   await expect(page.locator('tr.domain_row', { hasText: `${recordValue}-edited` })).toHaveCount(1);
 
   // 3. validate against the nameserver
@@ -308,6 +332,7 @@ test('delete dns record', async ({ page }) => {
   const newRow = page.locator('tr.domain_row', { hasText: `${recordValue}-edited` });
   await expect(newRow).toBeVisible();
   //await newRow.locator('button[data-action="delete"], button.delete-record, .btn-delete').click();
+  await openRowMenu(newRow);
   await newRow.locator('button.delete-button').click();
 
   const confirmBtn = page.locator('button:has-text("Confirm"), button:has-text("Confirm")').first();
@@ -333,7 +358,8 @@ test('export dns zone', async ({ page }) => {
 
   await Promise.all([
     downloadPromise,
-    page.goto(`/domains/export-dns-zone/${domain}`).catch(e => {if (!e.message.includes('Download is starting')) throw e;})
+    // Chromium aborts a navigation that turns into a download, Firefox and WebKit say "Download is starting"
+    page.goto(`/domains/export-dns-zone/${domain}`).catch(e => {if (!/Download is starting|net::ERR_ABORTED/.test(e.message)) throw e;})
   ]);
 
   const download = await downloadPromise;
@@ -362,8 +388,9 @@ test('edit zone file', async ({ page }) => {
   await page.goto(`/domains/edit-dns-zone/${domain}`);
   const newRow = page.locator('tr.domain_row', { hasText: ZONE_EDITOR_TXT });
   await expect(newRow).toBeVisible();
-  await expect(newRow.locator('td').nth(3)).toHaveText('TXT');
-  await expect(newRow.locator('td').nth(4)).toContainText(ZONE_EDITOR_TXT);
+  const cells = await dnsCells(newRow);
+  await expect(cells.type).toHaveText('TXT');
+  await expect(cells.value).toContainText(ZONE_EDITOR_TXT);
 
   // 3. validate against the nameserver
   await expect.poll(() => txtRecords(domain), { timeout: 30_000 }).toContain(ZONE_EDITOR_TXT);
@@ -377,7 +404,7 @@ test('reset dns zone', async ({ page }) => {
   const tmprecordValue = `temporary-${randomBytes(6).toString('hex')}`;
 
   // 1. create random TXT record
-  await page.locator('#AddDNSRecord').click();
+  await openAddRecord(page);
   const addRow = page.locator('#addRecordRow');
   await expect(addRow).toBeVisible();
   await addRow.locator('input[name="Name"]').fill(domain);
@@ -389,19 +416,30 @@ test('reset dns zone', async ({ page }) => {
   // 2. validate on page
   const newRow = page.locator('tr.domain_row', { hasText: tmprecordValue });
   await expect(newRow).toBeVisible();
-  await expect(newRow.locator('td').nth(3)).toHaveText('TXT');
-  await expect(newRow.locator('td').nth(4)).toContainText(tmprecordValue);
+  const cells = await dnsCells(newRow);
+  await expect(cells.type).toHaveText('TXT');
+  await expect(cells.value).toContainText(tmprecordValue);
 
   // 3. restart
   // adding the record reloads the page, a click before its scripts start doesn't open the menu
   await page.waitForLoadState('load');
-  const resetLink = page.locator('#dropdownHover').locator('a:has-text("Reset")');
-  await expect(async () => {
-    if (!(await resetLink.isVisible())) await page.locator('#dropdownHoverButton').click();
-    await expect(resetLink).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 30_000 });
-  await resetLink.click();
-  const resetBtn = page.getByRole('button', { name: 'Reset Zone', exact: true });
+  // the new theme's header button is also named Reset Zone, so scope to the reset form
+  const resetBtn = page.locator('form[action^="/domains/restart-dns-zone/"]').getByRole('button', { name: 'Reset Zone', exact: true });
+  // the new theme has Reset Zone in the page header instead of the menu
+  const headerReset = page.locator('.op-page-head').getByRole('button', { name: 'Reset Zone' });
+  if (await headerReset.count()) {
+    await expect(async () => {
+      await headerReset.click();
+      await expect(resetBtn).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
+  } else {
+    const resetLink = page.locator('#dropdownHover').locator('a:has-text("Reset")');
+    await expect(async () => {
+      if (!(await resetLink.isVisible())) await page.locator('#dropdownHoverButton').click();
+      await expect(resetLink).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
+    await resetLink.click();
+  }
   await expect(resetBtn).toBeVisible();
   await resetBtn.click();
     
@@ -421,10 +459,23 @@ test('dynamic dns record', async ({ page, context }) => {
   const subdomain = `ddns-${Date.now()}`;
   const fqdn = `${subdomain}.${domain}`;
 
+  // the new theme uses a New Host button and sheets, shows the type under the host name and the IP in the second cell
+  const modern = (await page.locator('#add-entry').count()) === 0;
+  // a host still on 0.0.0.0 shows as "Not set yet" in the new theme
+  const placeholderIp = /0\.0\.0\.0|Not set yet/;
+  const ipCell = (row: Locator) => row.locator('td').nth(modern ? 1 : 2);
+  // the new theme keeps Edit and Delete in the row's actions menu
+  const rowAction = async (row: Locator, name: string) => {
+    if (!modern) return row.locator(`button[title="${name}"]`).click();
+    await row.locator('td.op-cell-menu > button').click();
+    await row.locator('.op-menu').getByRole('button', { name, exact: true }).click();
+  };
+  const sheetForm = (action: string) => page.locator(`.op-sheet form:has(input[name="action"][value="${action}"])`);
+
   // 1. create dynamic dns entry
-  await page.locator('#add-entry').click();
+  await (modern ? page.getByRole('button', { name: /^(New Host|Add your first host)$/ }).first() : page.locator('#add-entry')).click();
   // Scope to the create panel specifically (always visible when panel === 'create')
-  const createForm = page.locator('[x-show="panel === \'create\'"] form');
+  const createForm = modern ? sheetForm('create') : page.locator('[x-show="panel === \'create\'"] form');
   await expect(createForm).toBeVisible();
   await createForm.locator('select[name="domain"]').selectOption(domain);
   await createForm.locator('input[name="subdomain"]').fill(subdomain);
@@ -437,15 +488,29 @@ test('dynamic dns record', async ({ page, context }) => {
   const row = table.locator('tbody tr', { hasText: subdomain });
   await expect(row).toBeVisible({ timeout: 10000 });
   await expect(row.locator('td').nth(0)).toContainText(subdomain);
-  await expect(row.locator('td').nth(1)).toContainText('A');
-  await expect(row.locator('td').nth(2)).toContainText('0.0.0.0');
+  await expect(row.locator('td').nth(modern ? 0 : 1)).toContainText(modern ? 'A record' : 'A');
+  await expect(ipCell(row)).toContainText(placeholderIp);
 
   // 3. grab update url from the row's hidden title attribute
-  const updateCode = row.locator('code');
-  await expect(updateCode).toBeVisible();
-  const relativeUpdateUrl = await updateCode.evaluate(
-    (el) => el.getAttribute('title') || el.textContent || ''
-  );
+  let relativeUpdateUrl: string;
+  if (modern) {
+    // the row only shows the first 4 token characters, the full URL is in the Connect a device card once unmasked
+    const hint = (await row.locator('td').nth(3).textContent())?.match(/token=(\w{4})/)?.[1];
+    expect(hint).toBeTruthy();
+    await row.locator('td').first().click();
+    const connect = page.locator('#dd-connect');
+    await connect.getByRole('button', { name: 'Show token' }).first().click();
+    const fullUrl = connect.locator('.dd-url > span').first();
+    await expect(fullUrl).toContainText(`/dynamic-dns/update?token=${hint}`);
+    await expect(fullUrl).not.toContainText('•');
+    relativeUpdateUrl = (await fullUrl.textContent()) || '';
+  } else {
+    const updateCode = row.locator('code');
+    await expect(updateCode).toBeVisible();
+    relativeUpdateUrl = await updateCode.evaluate(
+      (el) => el.getAttribute('title') || el.textContent || ''
+    );
+  }
   expect(relativeUpdateUrl).toContain('/dynamic-dns/update?token=');
 
   // 4. open update url — this triggers the actual IP update
@@ -458,20 +523,19 @@ test('dynamic dns record', async ({ page, context }) => {
   await page.reload();
   const updatedRow = page.locator('tbody tr', { hasText: subdomain });
   await expect(updatedRow).toBeVisible();
-  await expect(updatedRow.locator('td').nth(2)).not.toContainText('0.0.0.0');
-  const updatedIp = (await updatedRow.locator('td').nth(2).textContent())?.trim();
+  await expect(ipCell(updatedRow)).not.toContainText(placeholderIp);
+  const updatedIp = (await ipCell(updatedRow).textContent())?.trim();
   console.log(`Updated IP: ${updatedIp}`);
 
   // 6. edit the entry — change subdomain to verify edit panel works
-  const editBtn = updatedRow.locator('button[title="Edit"]');
-  await editBtn.click();
-  const editForm = page.locator('[x-show="panel === \'edit\'"] form');
+  await rowAction(updatedRow, 'Edit');
+  const editForm = modern ? sheetForm('edit') : page.locator('[x-show="panel === \'edit\'"] form');
   await expect(editForm).toBeVisible();
   // Verify pre-filled values
   await expect(editForm.locator('input[name="subdomain"]')).toHaveValue(subdomain);
   await expect(editForm.locator('input[name="ip"]')).toHaveValue(updatedIp ?? '');
   // Verify update URL is shown
-  const updateUrlCode = editForm.locator('code');
+  const updateUrlCode = editForm.locator('code, .dd-url > span');
   await expect(updateUrlCode).toBeVisible();
   await expect(updateUrlCode).toContainText('/dynamic-dns/update?token=');
   // Save without changes (just confirm the form submits cleanly)
@@ -493,9 +557,8 @@ test('dynamic dns record', async ({ page, context }) => {
   // 8. delete the entry
   await page.goto(`/domains/dynamic-dns`);
   const rowAfterEdit = page.locator('tbody tr', { hasText: subdomain });
-  const deleteBtn = rowAfterEdit.locator('button[title="Delete"]');
-  await deleteBtn.click();
-  const deleteForm = page.locator('[x-show="panel === \'delete\'"] form');
+  await rowAction(rowAfterEdit, 'Delete');
+  const deleteForm = modern ? sheetForm('delete') : page.locator('[x-show="panel === \'delete\'"] form');
   await expect(deleteForm).toBeVisible();
   // Confirm the warning text references our subdomain
   await expect(deleteForm).toContainText(subdomain);
@@ -513,11 +576,13 @@ test('redirects', async ({ page }) => {
   const domain = 'redirect.tests.openpanel.org';
   const redirectUrl = 'https://pejcic.rs/?proba';
   const editedUrl = 'https://pejcic.rs/?edited';
+  // the new theme's sheet has a Save Redirect button without the id
+  const saveRedirect = page.locator('#save-redirect').or(page.getByRole('button', { name: 'Save Redirect' }));
 
   // CREATE
   await page.goto(`/domains/redirect?domain=${domain}`);
   await page.fill('input[name="redirect_url"][type="url"]', redirectUrl);
-  await page.click('#save-redirect');
+  await saveRedirect.click();
   await expect(page.locator(`text=Successfully created redirect from domain ${domain} to ${redirectUrl}`)).toBeVisible();
 
   await page.goto(`/domains/redirect?domain=${domain}`);
@@ -530,7 +595,7 @@ test('redirects', async ({ page }) => {
   // EDIT
   await page.goto(`/domains/redirect?domain=${domain}`);
   await page.fill('input[name="redirect_url"][type="url"]', editedUrl);
-  await page.click('#save-redirect');
+  await saveRedirect.click();
   await expect(page.locator(`text=Successfully created redirect from domain ${domain} to ${editedUrl}`)).toBeVisible();
 
   await page.goto(`/domains/redirect?domain=${domain}`);
@@ -542,6 +607,12 @@ test('redirects', async ({ page }) => {
 
   // DELETE
   await page.goto(`/domains/redirect?domain=${domain}`);
+  // the new theme opens the edit sheet for the domain, delete is the row's trash button and a confirm sheet
+  const deleteRow = page.getByRole('button', { name: `Delete redirect for ${domain}` });
+  if (await deleteRow.count()) {
+    await page.keyboard.press('Escape');
+    await deleteRow.click();
+  }
   await page.click('button[type="submit"]:has-text("Delete Redirect")');
   await page.goto(`/domains/redirect?domain=${domain}`);
   await expect(page.locator('input[name="redirect_url"][type="url"]')).toHaveValue('');
@@ -634,12 +705,13 @@ test('delete domain', async ({ page }) => {
 test('bulk actions on dns records', async ({ page }) => {
   test.setTimeout(3 * 60_000);
   const values = [`bulk-a-${randomBytes(4).toString('hex')}`, `bulk-b-${randomBytes(4).toString('hex')}`];
-  const rows = '#filemanager_table tbody tr.domain_row';
+  // the records table is #dns-records-table in the new theme
+  const rows = ':is(#filemanager_table, #dns-records-table) tbody tr.domain_row';
   await ensureDomain(page, domain);
 
   for (const value of values) {
     await page.goto(`/domains/edit-dns-zone/${domain}`);
-    await page.locator('#AddDNSRecord').click();
+    await openAddRecord(page);
     const addRow = page.locator('#addRecordRow');
     await expect(addRow).toBeVisible();
     await addRow.locator('input[name="Name"]').fill(domain);
@@ -654,7 +726,7 @@ test('bulk actions on dns records', async ({ page }) => {
 
   await bulkSelect(page, values, rows);
   await bulkRun(page, 'ttl', '3600');
-  for (const value of values) await expect(page.locator(rows, { hasText: value }).locator('td').nth(2)).toHaveText('3600');
+  for (const value of values) await expect((await dnsCells(page.locator(rows, { hasText: value }))).ttl).toHaveText('3600');
 
   await bulkSelect(page, values, rows);
   await bulkRun(page, 'delete');

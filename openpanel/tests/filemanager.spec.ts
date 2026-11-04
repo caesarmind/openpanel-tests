@@ -540,15 +540,18 @@ test('change file permissions', async ({ page }) => {
     `#filemanager_table tbody tr[data-file="${TXT_FILE_BAK}"]`
   );
 
-  const permissionsEditor = fileRow.locator('.fm-inline-editor');
+  // the new theme edits permissions in a sheet that names the file, instead of an inline editor in the row
+  const permissionsEditor = fileRow.locator('.fm-inline-editor')
+    .or(page.locator('.fm-pm', { hasText: TXT_FILE_BAK }));
+  const permissionsInput = permissionsEditor.locator('.fm-inline-input, #fm-pm-octal');
 
   await expect(permissionsEditor).toBeVisible();
 
   // Set permissions to 755
-  await permissionsEditor.locator('.fm-inline-input').fill('755');
+  await permissionsInput.fill('755');
 
   // Save permissions
-  await permissionsEditor.locator('button[data-act="save"]').click();
+  await permissionsEditor.locator('button[data-act="save"], .fm-pm-foot .op-btn-primary').click();
 
   // Verify success message
   await expect(page.locator('body'))
@@ -567,9 +570,7 @@ test('change file permissions', async ({ page }) => {
   await selectItem(page, TXT_FILE_BAK);
   await page.locator('#permButton').click();
 
-  await expect(
-    fileRow.locator('.fm-inline-editor .fm-inline-input')
-  ).toHaveValue('755');
+  await expect(permissionsInput).toHaveValue('755');
 
   console.log('File permissions changed successfully');
 });
@@ -704,16 +705,18 @@ const explorerTests = [
   {
     route: '/disk-usage',
     columnHeader: 'Size',
+    heading: 'Folders by size',
     valueRegex: /^\d+(\.\d+)?\s?[KMGT]?B?$/ 
   },
   {
     route: '/inodes-explorer',
     columnHeader: 'INodes',
+    heading: 'Folders by file count',
     valueRegex: /^\d+$/ 
   }
 ];
 
-for (const { route, columnHeader, valueRegex } of explorerTests) {
+for (const { route, columnHeader, heading, valueRegex } of explorerTests) {
   test(route, async ({ page }) => {
     // 1. Initial
     await page.goto(route);
@@ -721,16 +724,20 @@ for (const { route, columnHeader, valueRegex } of explorerTests) {
     
     await expect(table).toBeVisible();
     await expect(table).toContainText('docker-data');
-    await expect(table.locator('th', { hasText: columnHeader })).toBeVisible();
+    // the new theme lists folders under a card heading with a size bar each, instead of a table and a pie chart
+    const isList = await table.evaluate(el => el.tagName === 'UL');
+    const header = isList ? page.locator('.op-du h2', { hasText: heading }) : table.locator('th', { hasText: columnHeader });
+    const valueOf = (row: any) => isList ? row.locator('.op-du-size') : row.locator('td').nth(1);
+    await expect(header).toBeVisible();
     
-    const chart = page.locator('#folderChart');
+    const chart = isList ? table.locator('.op-du-bar').first() : page.locator('#folderChart');
     await expect(chart).toBeVisible();
 
     let box = await chart.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.width).toBeGreaterThan(0);
 
-    const valueCells = table.locator('tbody tr td:nth-child(2)');
+    const valueCells = isList ? table.locator('.op-du-size') : table.locator('tbody tr td:nth-child(2)');
     const count = await valueCells.count();
     for (let i = 0; i < count; i++) {
       const text = (await valueCells.nth(i).textContent())?.trim();
@@ -738,23 +745,26 @@ for (const { route, columnHeader, valueRegex } of explorerTests) {
     }
 
     // 2. enter "docker-data'
-    const dockerLink = page.locator(`a[href*="${route}/docker-data"]`);
+    // scoped to the list, the new theme's Largest folder card can link there too
+    const dockerLink = table.locator(`a[href*="${route}/docker-data"]`);
     await dockerLink.click();
 
     await expect(page).toHaveURL(new RegExp(`${route}/docker-data/?`));
     
     const table2 = page.locator('#folders_to_navigate');
     await expect(table2).toContainText('volumes');
-    await expect(table2.locator('th', { hasText: columnHeader })).toBeVisible();
+    await expect(header).toBeVisible();
     
-    const volumesRow = table2.locator('tr', { hasText: 'volumes' });
-    const valueCell = volumesRow.locator('td').nth(1);
+    const volumesRow = table2.locator(isList ? 'li' : 'tr', { hasText: 'volumes' });
+    const valueCell = valueOf(volumesRow);
     
     await expect(valueCell).toBeVisible();
     const cellText = (await valueCell.textContent())?.trim();
     expect(cellText).toMatch(valueRegex);
 
     const isRendered = await page.evaluate(() => {
+      const bars = [...document.querySelectorAll<HTMLElement>('#folders_to_navigate .op-du-bar > span')];
+      if (bars.length) return bars.every(bar => parseFloat(bar.style.width) > 0);
       const canvas = document.getElementById('folderChart') as HTMLCanvasElement;
       if (!canvas) return false;
       const ctx = canvas.getContext('2d');
@@ -765,7 +775,8 @@ for (const { route, columnHeader, valueRegex } of explorerTests) {
     expect(isRendered).toBeTruthy();
 
     // 3. "Up One Level"
-    const upOneLevelLink = page.locator('a', { hasText: 'Up One Level' });
+    // an icon link with only an aria-label in the new theme, #goUp in both
+    const upOneLevelLink = page.locator('#goUp');
     await upOneLevelLink.click();
     
     await expect(page).toHaveURL(new RegExp(`${route}/?$`));

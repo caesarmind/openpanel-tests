@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Locator, Page } from '@playwright/test';
 import { bulkRun, bulkSelect, bulkSelectAllAndClear, ensureDomain, withProjectPage } from '../../helpers';
 
 // own domain, the version tests switch its php back and forth
@@ -15,6 +15,11 @@ async function openPhpPage(page: Page) {
 
 function domainRows(page: Page) {
   return page.locator('tbody tr');
+}
+
+// the new theme has no plain version text in the row, only the switcher, so read the version its form posts
+async function versionOf(row: Locator) {
+  return (await row.locator('input[name="old_php_version"]').inputValue()).match(/\d+\.\d+/)?.[0] ?? null;
 }
 
 test('list versions', async ({ page }) => {
@@ -36,7 +41,8 @@ test('list versions', async ({ page }) => {
 
   await expect(headers.nth(1)).toContainText(/domain/i);
   await expect(headers.nth(2)).toContainText(/current php version/i);
-  await expect(headers.nth(3)).toContainText(/change version/i);
+  // the new theme changes the version in the current version column and shows its support level here
+  await expect(headers.nth(3)).toContainText(/change version|support/i);
 
   // versions are shown in the table
   const rows = domainRows(page);
@@ -63,17 +69,18 @@ test('list versions', async ({ page }) => {
     // 3 = change version
     const versionCell = row.locator('td').nth(2);
 
-    // version format is ok
-    const text = await versionCell.textContent();
-    expect(text?.trim()).toMatch(/\d+\.\d+/);
+    // version format is ok, the new theme shows it as the picked option of the switcher
+    const shown = versionCell.locator('p').or(versionCell.locator('select[name="new_php_version"] option:checked'));
+    await expect(shown).toHaveText(/\d+\.\d+/);
 
-    // status indicators are ok
+    // status indicators are ok, the new theme has a support badge instead of the three bars
     const bars = versionCell.locator('div.flex.gap-0\\.5 > div');
-    await expect(bars).toHaveCount(3);
+    if (await bars.count()) await expect(bars).toHaveCount(3);
+    else await expect(row.locator('td').nth(3).locator('.op-status, .op-hint')).toHaveCount(1);
   }
 
   // summary per version
-  const counters = page.locator('dl > div');
+  const counters = page.locator('dl > div').or(page.locator('.op-chips .op-chip'));
   const count = await counters.count();
 
   if (rowCount > 0) {
@@ -103,9 +110,8 @@ test.describe('search filter', () => {
 
     await page.waitForTimeout(300);
 
-    const visibleRows = rows.filter({
-      hasNot: page.locator('[style*="display: none"]')
-    });
+    // the new theme hides each row's Change button until a version is picked, so check the row itself
+    const visibleRows = rows.filter({ visible: true });
 
     const visibleCount = await visibleRows.count();
 
@@ -116,7 +122,7 @@ test.describe('search filter', () => {
   test('version counter filter', async ({ page }) => {
     await openPhpPage(page);
 
-    const counterLink = page.locator('dl a').first();
+    const counterLink = page.locator('dl a').or(page.locator('.op-chips .op-chip')).first();
     const count = await counterLink.count();
 
     if (count === 0) return;
@@ -195,9 +201,7 @@ test.describe('version change', () => {
         // 0 = checkbox
         // 1 = domain
         // 2 = current PHP version
-        originalVersion =
-          (await row.locator('td').nth(2).textContent())
-            ?.match(/\d+\.\d+/)?.[0] ?? null;
+        originalVersion = await versionOf(row);
 
         console.log(`original php version: ${originalVersion}`);
       }
@@ -225,9 +229,7 @@ test.describe('version change', () => {
       const row = await findDomainRow(page);
 
       if (row) {
-        const current =
-          (await row.locator('td').nth(2).textContent())
-            ?.match(/\d+\.\d+/)?.[0];
+        const current = await versionOf(row);
 
         if (current !== originalVersion) {
           await row
@@ -298,9 +300,7 @@ test.describe('version change', () => {
       // 0 = checkbox
       // 1 = domain
       // 2 = current PHP version
-      const currentVersion =
-        (await targetRow.locator('td').nth(2).textContent())
-          ?.match(/\d+\.\d+/)?.[0] ?? 'unknown';
+      const currentVersion = (await versionOf(targetRow)) ?? 'unknown';
 
       if (currentVersion === version) {
         test.skip(
@@ -376,19 +376,19 @@ test('bulk actions', async ({ page }) => {
   test.setTimeout(5 * 60_000);
   const rows = '#php-domains-table tbody tr';
   await ensureDomain(page, domain);
-  const versionOf = async () => (await page.locator(rows, { hasText: domain }).locator('td').nth(2).textContent())?.match(/\d+\.\d+/)?.[0];
+  const versionOfDomain = async () => (await versionOf(page.locator(rows, { hasText: domain }))) ?? undefined;
 
   await page.goto('/php/domains');
   await bulkSelectAllAndClear(page);
-  const before = await versionOf();
+  const before = await versionOfDomain();
 
   // any other installed version, then reset to the default
   let picked = '';
   await bulkSelect(page, [domain], rows);
   await bulkRun(page, 'version', options => (picked = options.find(o => !o.includes(before ?? '-')) ?? options[0]));
-  await expect.poll(versionOf).toBe(picked.match(/\d+\.\d+/)?.[0]);
+  await expect.poll(versionOfDomain).toBe(picked.match(/\d+\.\d+/)?.[0]);
 
   await bulkSelect(page, [domain], rows);
   await bulkRun(page, 'default');
-  await expect.poll(versionOf).toBe(before);
+  await expect.poll(versionOfDomain).toBe(before);
 });

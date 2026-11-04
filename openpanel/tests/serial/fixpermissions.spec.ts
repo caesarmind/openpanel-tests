@@ -35,6 +35,12 @@ async function deleteSelected(page: Page, skipTrash = false) {
   await deleteEditor.locator('button[data-act="save"]').click();
 }
 
+// the new theme edits permissions in a sheet that names the file, instead of an inline editor in the row
+function permissionsEditor(page: Page, name: string) {
+  return page.locator(`#filemanager_table tbody tr[data-file="${name}"] .fm-inline-editor`)
+    .or(page.locator('.fm-pm', { hasText: name }));
+}
+
 async function changePermissions(page: Page, name: string, permissions: string) {
   // Select file or folder
   await selectItem(page, name);
@@ -42,19 +48,15 @@ async function changePermissions(page: Page, name: string, permissions: string) 
   // Open inline permissions editor
   await page.locator('#permButton').click();
 
-  const row = page.locator(
-    `#filemanager_table tbody tr[data-file="${name}"]`
-  );
-
-  const editor = row.locator('.fm-inline-editor');
+  const editor = permissionsEditor(page, name);
 
   await expect(editor).toBeVisible();
 
   // Change permissions
-  await editor.locator('.fm-inline-input').fill(permissions);
+  await editor.locator('.fm-inline-input, #fm-pm-octal').fill(permissions);
 
   // Save permissions
-  await editor.locator('button[data-act="save"]').click();
+  await editor.locator('button[data-act="save"], .fm-pm-foot .op-btn-primary').click();
 
   // Verify success
   await expect(page.locator('body'))
@@ -67,20 +69,16 @@ async function verifyPermissions(page: Page, name: string, expected: string) {
   // Open inline permissions editor
   await page.locator('#permButton').click();
 
-  const row = page.locator(
-    `#filemanager_table tbody tr[data-file="${name}"]`
-  );
-
-  const editor = row.locator('.fm-inline-editor');
+  const editor = permissionsEditor(page, name);
 
   await expect(editor).toBeVisible();
 
   // Verify numeric permissions
-  await expect(editor.locator('.fm-inline-input'))
+  await expect(editor.locator('.fm-inline-input, #fm-pm-octal'))
     .toHaveValue(expected);
 
   // Close editor
-  await editor.locator('button[data-act="cancel"]').click();
+  await editor.locator('button[data-act="cancel"], .fm-pm-foot .op-btn-secondary').click();
 }
 
 test('fix permissions', async ({ page }) => {

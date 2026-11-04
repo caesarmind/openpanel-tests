@@ -11,21 +11,51 @@ test.beforeAll(async ({ browser }, testInfo) => {
 const BLOCKED_STATUSES = [403, 406, 409, 422];
 
 // Toggle lives on the list page, one per domain row → must be scoped
-function wafToggle(page: Page, domain: string) {
+function wafRow(page: Page, domain: string) {
   return page.locator('#waf-domains-table tbody tr')
     .filter({
       has: page.locator(`input[name="domain_name"][value="${domain}"]`)
-    })
-    .locator('button[aria-checked]');
+    });
+}
+
+// monitor only counts as on, like the old switch
+const WAF_ON = /^(On|DetectionOnly)$/;
+
+// the old list has a switch per row, the new one a status cell and a turn on/off item in the row menu
+const rowMenu = (page: Page, domain: string) => wafRow(page, domain).getByRole('button', { name: /^Actions for/ });
+
+async function expectWaf(page: Page, domain: string, on: boolean) {
+  const row = wafRow(page, domain);
+  await expect(row).toBeVisible();
+  if (!(await rowMenu(page, domain).count())) {
+    await expect(row.locator('button[aria-checked]')).toHaveAttribute('aria-checked', String(on));
+    return;
+  }
+  const status = row.locator('[data-sort-col="status"]');
+  if (on) await expect(status).toHaveAttribute('data-sort-value', WAF_ON);
+  else await expect(status).not.toHaveAttribute('data-sort-value', WAF_ON);
 }
 
 async function setWaf(page: Page, domain: string, desiredOn: boolean) {
   await page.goto('/server/waf');
-  const toggle = wafToggle(page, domain);
-  await expect(toggle).toBeVisible();
-  if (await toggle.getAttribute('aria-checked') !== String(desiredOn)) {
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-checked', String(desiredOn));
+  const row = wafRow(page, domain);
+  await expect(row).toBeVisible();
+  if (!(await rowMenu(page, domain).count())) {
+    const toggle = row.locator('button[aria-checked]');
+    await expect(toggle).toBeVisible();
+    if (await toggle.getAttribute('aria-checked') !== String(desiredOn)) {
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', String(desiredOn));
+    }
+    return;
+  }
+  const isOn = WAF_ON.test((await row.locator('[data-sort-col="status"]').getAttribute('data-sort-value')) ?? '');
+  if (isOn !== desiredOn) {
+    await rowMenu(page, domain).click();
+    const loaded = page.waitForEvent('load', { timeout: 60_000 });
+    await row.getByRole('button', { name: desiredOn ? 'Turn firewall on' : 'Turn firewall off' }).click();
+    await loaded;
+    await expectWaf(page, domain, desiredOn);
   }
 }
 
@@ -168,7 +198,8 @@ test('waf logs show blocked requests for domain', async ({ page }) => {
 
   const logsTable = page.locator('#waf-logs-table');
   await expect(logsTable).toBeVisible();
-  await expect(page.locator('h1')).toContainText(domain);
+  // the new page has the domain in the card heading, the old one in the h1
+  await expect(page.getByRole('heading', { name: `WAF Logs for ${domain}` })).toBeVisible();
 
   const rows = logsTable.locator('tbody tr');
   await expect(rows).not.toHaveCount(0);
@@ -204,11 +235,11 @@ test('bulk actions', async ({ page }) => {
 
   await bulkSelect(page, [DOMAIN], rows);
   await bulkRun(page, 'disable');
-  await expect(wafToggle(page, DOMAIN)).toHaveAttribute('aria-checked', 'false');
+  await expectWaf(page, DOMAIN, false);
 
   await bulkSelect(page, [DOMAIN], rows);
   await bulkRun(page, 'enable');
-  await expect(wafToggle(page, DOMAIN)).toHaveAttribute('aria-checked', 'true');
+  await expectWaf(page, DOMAIN, true);
 
   // back to the default level for the next run
   await bulkSelect(page, [DOMAIN], rows);

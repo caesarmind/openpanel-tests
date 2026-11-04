@@ -9,6 +9,17 @@ async function waitForPostgres(page: any) {
   await expect(
     page.getByText(/still initializing/i)
   ).toHaveCount(0, { timeout: 90000 });
+  // toggling remote access recreates the container, until it's running and healthy again the lists come back empty, so wait and reload
+  const state = async () => {
+    const s = await (await page.request.get('/postgresql/users?output=json')).json();
+    return `${s.container_state}/${s.health_status}`;
+  };
+  if ((await state()) !== 'running/healthy') {
+    // the health check can stay at starting for a minute or two, longer than a plain test's 30s
+    test.info().setTimeout(test.info().timeout + 120000);
+    await expect.poll(state, { timeout: 120000, intervals: [3000] }).toBe('running/healthy');
+    await page.reload();
+  }
 }
 
 async function navigateToPostgreSQLPage(page: any) {
@@ -25,6 +36,16 @@ async function openNewDatabaseForm(page: any) {
   }).toPass({ timeout: 8 * 60_000, intervals: [10_000] });
 }
 
+// the new form's alpine model clears a name typed before it started, so type again until it sticks and Create is enabled
+async function fillDatabaseName(page: any, name: string) {
+  const nameInput = page.getByRole('textbox', { name: 'Database Name' });
+  await expect(async () => {
+    await nameInput.fill(name);
+    await expect(nameInput).toHaveValue(name, { timeout: 1000 });
+    await expect(page.getByRole('button', { name: 'Create Database' })).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 20000 });
+}
+
 async function expectDatabaseInTable(page: any, dbName: string) {
   const row = page.locator('tr', { hasText: dbName });
   await expect(row).toBeVisible();
@@ -34,17 +55,35 @@ async function expectDatabaseNotInTable(page: any, dbName: string) {
   await expect(page.locator('tr', { hasText: dbName })).toHaveCount(0);
 }
 
+// the old rows have a delete button that turns into a btn-dark confirm, the new ones keep delete in the row's actions menu behind a browser confirm
+async function deleteRow(page: any, row: any) {
+  const direct = row.locator('button.btn-danger');
+  if (await direct.count()) {
+    await direct.click();
+    const confirmButton = page.locator('button.btn-dark:visible');
+    await expect(confirmButton.first()).toBeVisible();
+    await confirmButton.first().click();
+    return;
+  }
+  await row.getByRole('button', { name: /^Actions/ }).click();
+  page.once('dialog', (dialog: any) => dialog.accept());
+  await row.locator('.op-menu button.is-danger').click();
+}
+
 // drop a row (db or user) left behind by an earlier aborted run
 async function deleteRowIfExists(page: any, url: string, name: string) {
   await page.goto(url);
   await waitForPostgres(page);
   const row = page.locator('tr').filter({ has: page.getByText(name, { exact: true }) });
   if (!(await row.count())) return;
-  await row.locator('button.btn-danger').click();
-  const confirmButton = page.locator('button.btn-dark:visible');
-  await expect(confirmButton.first()).toBeVisible();
-  await confirmButton.first().click();
+  await deleteRow(page, row);
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
+}
+
+// the new user form's labels have a space before the *, both themes use these ids
+async function fillNewUser(page: any, name: string, password: string) {
+  await page.locator('#username').fill(name);
+  await page.locator('#password').fill(password);
 }
 
 
@@ -63,9 +102,11 @@ test('create database', async ({ page }) => {
   await openNewDatabaseForm(page);
   await deleteRowIfExists(page, '/postgresql', 'stefan_psql');
   await openNewDatabaseForm(page);
-  await page.getByRole('textbox', { name: 'Database Name' }).fill('stefan_psql');
+  await fillDatabaseName(page, 'stefan_psql');
   await page.getByRole('button', { name: 'Create Database' }).click();
   await expect(page.locator('body')).toContainText(/successfully created/i, { timeout: 25000 });
+  // the new create page stays on a done screen
+  await navigateToPostgreSQLPage(page);
   await expectDatabaseInTable(page, 'stefan_psql');
   console.log('postgresql database created');
 });
@@ -83,11 +124,11 @@ test('create user', async ({ page }) => {
   await deleteRowIfExists(page, '/postgresql/users', 'stefan_psql_user');
   await page.goto('/postgresql/user');
   await expect(page).toHaveURL(/postgresql\/user/);
-  await page.getByRole('textbox', { name: 'Username*' }).fill('stefan_psql_user');
-  await page.getByRole('textbox', { name: 'Password*' }).fill('stefan94');
+  await fillNewUser(page, 'stefan_psql_user', 'stefan94');
   await page.getByRole('button', { name: 'Create User' }).click();
   await expect(page.locator('body')).toContainText(/successfully created.*stefan_psql_user/i);
-  await page.getByRole('link', { name: 'Back to Users' }).click();
+  // the new page shows the credentials once with a View Users link
+  await page.getByRole('link', { name: 'Back to Users' }).or(page.getByRole('link', { name: 'View Users' })).click();
   await expect(page).toHaveURL(/postgresql\/users/);
   await expect(page.locator('body')).toContainText(/stefan_psql_user/i);
   console.log('postgresql user created');
@@ -96,7 +137,11 @@ test('create user', async ({ page }) => {
 
 test('change password', async ({ page }) => {
   await page.goto('/postgresql/users');
-  await page.getByRole('link', { name: ' Change Password' }).click();
+  // this spec's own user, the new row keeps Change Password in its actions menu
+  const row = page.locator('tr').filter({ has: page.getByText('stefan_psql_user', { exact: true }) });
+  const changeLink = row.getByRole('link', { name: 'Change Password' });
+  if (!(await changeLink.isVisible())) await row.getByRole('button', { name: /^Actions/ }).click();
+  await changeLink.click();
   await expect(page).toHaveURL(/postgresql\/password/);
   // the generate button only works once the page's script has run
   await page.waitForLoadState('load');
@@ -133,7 +178,8 @@ test('assign user to database', async ({ page }) => {
   await userSelect.selectOption('stefan_psql_user');
   await databaseSelect.selectOption('stefan_psql');
 
-  await page.getByRole('button', { name: 'Assign User to Database' }).click();
+  // the new submit button just says Assign
+  await page.getByRole('button', { name: 'Assign User to Database' }).or(page.getByRole('button', { name: 'Assign', exact: true })).click();
 
   await expect(page.locator('body')).toContainText(
     /Successfully added a user/i
@@ -189,8 +235,12 @@ test('database wizard', async ({ page }) => {
   await page.locator('input[name="database_name"]').fill('psql_proba');
   await page.locator('input[name="db_user"]').fill('psql_novi_user');
   await page.locator('#password').fill('stefan456g7dsd');
-  await page.getByRole('button', { name: 'Create DB, User, and Grant Privileges' }).click();
-  await expect(page.getByText('Successfully created database')).toBeVisible();
+  // both themes give the submit button this id, the new one is labelled Create
+  await page.locator('#createAndAssign').click();
+  // the new wizard ends on a Setup complete page with a link back to the list
+  await expect(page.getByText('Successfully created database').or(page.getByText(/^setup complete$/i))).toBeVisible();
+  const viewDatabases = page.getByRole('link', { name: /view databases/i });
+  if (await viewDatabases.count()) await viewDatabases.click();
   await expect(page).toHaveURL(/postgresql/);
   const row = page.locator('#databases-table tr', { hasText: 'psql_proba' });
   await expect(row).toContainText(/psql_proba/i);
@@ -262,7 +312,8 @@ INSERT INTO users VALUES (1, 'John');
     ]);
   await page.locator('select[name="database_name"]').selectOption('stefan_psql');
   await page.locator('input[name="db_file"]').setInputFiles(tempFilePath);
-  await page.getByRole('button', { name: 'Upload & Import' }).click();
+  // the new button just says Import
+  await page.getByRole('button', { name: 'Upload & Import' }).or(page.getByRole('button', { name: 'Import', exact: true })).click();
   await expect(page.locator('body')).toContainText(/successfully imported|import.*success/i);
   console.log('postgresql import working');
 });
@@ -270,6 +321,7 @@ INSERT INTO users VALUES (1, 'John');
 
 test('delete user', async ({ page }) => {
   await page.goto('/postgresql/users');
+  await waitForPostgres(page);
   await expect(page.locator('tr').filter({ has: page.getByText('stefan_psql_user', { exact: true }) })).toBeVisible();
   await deleteRowIfExists(page, '/postgresql/users', 'stefan_psql_user');
   await page.goto('/postgresql/users');
@@ -288,14 +340,9 @@ test('delete database', async ({ page }) => {
 
   const dbName = 'stefan_psql';
   const row = page.locator('tr', { hasText: dbName });
-  const deleteButton = row.locator('button.btn-danger');
 
-  await expect(deleteButton).toBeVisible();
-  await deleteButton.click();
-
-  const confirmButton = page.locator('button.btn-dark');
-  await expect(confirmButton).toBeVisible();
-  await confirmButton.click();
+  await expect(row).toBeVisible();
+  await deleteRow(page, row);
 
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
   await expectDatabaseNotInTable(page, dbName);
@@ -317,15 +364,14 @@ test('bulk actions', async ({ page }) => {
     await deleteRowIfExists(page, '/postgresql', db);
     await navigateToPostgreSQLPage(page);
     await page.getByRole('link', { name: 'New Database' }).click();
-    await page.getByRole('textbox', { name: 'Database Name' }).fill(db);
+    await fillDatabaseName(page, db);
     await page.getByRole('button', { name: 'Create Database' }).click();
     await expect(page.locator('body')).toContainText(/successfully created/i, { timeout: 25000 });
   }
   for (const user of users) {
     await deleteRowIfExists(page, '/postgresql/users', user);
     await page.goto('/postgresql/user');
-    await page.getByRole('textbox', { name: 'Username*' }).fill(user);
-    await page.getByRole('textbox', { name: 'Password*' }).fill('stefan94bulk');
+    await fillNewUser(page, user, 'stefan94bulk');
     await page.getByRole('button', { name: 'Create User' }).click();
     await expect(page.locator('body')).toContainText(new RegExp(`successfully created.*${user}`, 'i'));
   }

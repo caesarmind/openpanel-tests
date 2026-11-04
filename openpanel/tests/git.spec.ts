@@ -41,6 +41,9 @@ test.beforeAll(async ({ browser }, testInfo) => {
   });
 });
 
+// the old form picks the source with buttons, the new one with radio cards
+const sourceOption = (page: Page, name: RegExp) => page.getByRole('button', { name }).or(page.getByRole('radio', { name }));
+
 async function openAddForm(page: Page) {
   await page.goto('/git');
   await page.locator('#add-repository').click();
@@ -61,7 +64,7 @@ test('git page loads', async ({ page }) => {
 
 test('create local repository', async ({ page }) => {
   await openAddForm(page);
-  await page.getByRole('button', { name: /Local repository/i }).click();
+  await sourceOption(page, /Local repository/i).click();
   await page.locator('#name').fill(LOCAL_REPO);
   await page.locator('#domain').selectOption(DOMAIN);
   await page.locator('#target_dir').fill(LOCAL_DIR);
@@ -164,9 +167,12 @@ test('new push password', async ({ page }) => {
 test('create remote repository', async ({ page }) => {
   test.setTimeout(120_000);
   await openAddForm(page);
-  await page.getByRole('button', { name: /Remote Git hosting/i }).click();
+  await sourceOption(page, /Remote Git hosting/i).click();
   await page.locator('#remote_url').fill(REMOTE_URL);
+  // the new page guesses the name from the url on blur, let that land before typing ours or the two run together
+  await page.locator('#remote_url').blur();
   await page.locator('#name').fill(REMOTE_REPO);
+  await expect(page.locator('#name')).toHaveValue(REMOTE_REPO);
   await page.locator('#domain').selectOption(DOMAIN);
   await page.locator('#target_dir').fill(REMOTE_DIR);
   await page.locator('form:has(input[name="action"][value="create"]) input[name="deploy_mode"][value="automatic"]').check();

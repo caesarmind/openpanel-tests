@@ -666,7 +666,8 @@ test('import emails page loads', async ({ page }) => {
   await expect(page).toHaveURL(/emails\/import/);
   await expect(page.getByRole('heading', { name: /import emails/i })).toBeVisible();
   await expect(page.locator('input[type="file"]')).toBeVisible();
-  await expect(page.getByRole('button', { name: /upload/i })).toBeVisible();
+  // the new theme labels the file input "Upload File", which newer playwright also counts as a button
+  await expect(page.getByRole('button', { name: /^\s*upload\s*$/i })).toBeVisible();
 });
 
 test('import emails file input accepts csv and xlsx only', async ({ page }) => {

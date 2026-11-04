@@ -5,16 +5,25 @@ import { withProjectPage } from '../../helpers';
 const USERNAME = process.env.PANEL_USERNAME;
 const PASSWORD = process.env.PANEL_PASSWORD;
 
+// turns 2FA off, or cancels a setup a stopped run left pending (that page shows Cancel instead of enable)
+async function reset2fa(page: Page) {
+  await page.goto('/account/2fa');
+  const disable = page.locator('button:has-text("Click to disable 2FA")');
+  const cancel = page.locator('button:has-text("Click to Cancel")');
+  if (await disable.isVisible()) await disable.click();
+  else if (await cancel.isVisible()) await cancel.click();
+  else return;
+  await expect(page.getByText('2FA is currently disabled')).toBeVisible();
+  await expect(page.locator('button:has-text("Click to enable 2FA")')).toBeVisible();
+}
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  await withProjectPage(browser, testInfo, reset2fa);
+});
+
 // left enabled, every login after this spec would stop at the 2FA prompt
 test.afterAll(async ({ browser }, testInfo) => {
-  await withProjectPage(browser, testInfo, async page => {
-    await page.goto('/account/2fa');
-    const disable = page.locator('button:has-text("Click to disable 2FA")');
-    if (await disable.isVisible()) {
-      await disable.click();
-      await expect(page.getByText('2FA is currently disabled')).toBeVisible();
-    }
-  });
+  await withProjectPage(browser, testInfo, reset2fa);
 });
 
 // ENABLE
@@ -30,7 +39,8 @@ test('enable 2FA', async ({ page }) => {
   expect(totpSecret.length).toBeGreaterThan(10);
   console.log('Captured TOTP secret:', totpSecret);
   await page.goto(`/account/2fa`);
-  const step2Tab = page.locator('#dashboard-styled-tab');
+  // the old page has a Step 2 tab, the new one a Next button on step 1
+  const step2Tab = page.locator('#dashboard-styled-tab').or(page.getByRole('button', { name: 'Next', exact: true })).first();
   if (await step2Tab.isVisible()) {
     await step2Tab.click();
   }
@@ -55,7 +65,8 @@ test('enable 2FA', async ({ page }) => {
   await expect(page.locator('#twofa_code')).toBeVisible();
   await page.fill('#twofa_code', '000000');
   await page.click('button[type="submit"]');
-  await expect(page.locator('.bg-red-50, .bg-red-500\\/10')).toBeVisible();
+  // the new login page shows the error under the code field
+  await expect(page.locator('.bg-red-50, .bg-red-500\\/10, #twofa-error')).toBeVisible();
   await expect(page.locator('#twofa_code')).toBeVisible();
   // test with correct
   await page.goto(`/login`);

@@ -1,4 +1,23 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+// Classic picks the version in a #php_version select, the new theme links each version as a chip
+async function pickerVersions(page: Page, suffix: string) {
+  const dropdown = page.locator('#php_version');
+  if (await dropdown.count()) {
+    return dropdown.locator('option').evaluateAll(options => options.map(opt => (opt as HTMLOptionElement).value));
+  }
+  return page.locator(`a.op-chip[href^="/php/php"][href$="${suffix}"]`).evaluateAll((links, suffix) =>
+    links.map(a => a.getAttribute('href')!.slice('/php/php'.length, -suffix.length)), suffix);
+}
+
+async function pickVersion(page: Page, version: string, suffix: string) {
+  if (await page.locator('#php_version').count()) {
+    await page.locator('#php_version').selectOption(version);
+    await page.click('#submit_version');
+  } else {
+    await page.locator(`a.op-chip[href="/php/php${version}${suffix}"]`).click();
+  }
+}
 
 // changing the default version, php options and php.ini reload or restart php-fpm and change what new
 // domains get, which would break app installs running next to it, so these run in the serial project
@@ -116,23 +135,18 @@ test('change default php version', async ({ page }) => {
 });
 
 test('edit php options', async ({ page }) => {
-  await page.goto('/php/options');  
-  const dropdown = page.locator('#php_version');
-  const values = await dropdown.locator('option').evaluateAll(options => 
-    options
-      .map(opt => opt.value)
-      .filter(val => val !== "" && val !== "oldVersionValueHere") 
-  );
-  
+  await page.goto('/php/options');
+  const values = (await pickerVersions(page, '/options')).filter(val => val !== "" && val !== "oldVersionValueHere");
+
   if (values.length === 0) {
     throw new Error('No alternative PHP versions available to select.');
   }
 
   const randomVersion = values[Math.floor(Math.random() * values.length)];
-  await dropdown.selectOption(randomVersion);
-  await page.click('#submit_version');
+  await pickVersion(page, randomVersion, '/options');
 
-  const successRegex = new RegExp(`${randomVersion} Options`, 'i');
+  // the new theme titles the page PHP Options and names the version in the card heading
+  const successRegex = new RegExp(`${randomVersion} Options|Settings for PHP ${randomVersion}`, 'i');
   await expect(page.getByText(successRegex).first()).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/php/php${randomVersion}/options`));
 
@@ -145,7 +159,7 @@ test('edit php options', async ({ page }) => {
   await disableFuncs.fill('passthru,system');
 
   // 3. post_max_size
-  const postMaxSizeContainer = page.locator('div[data-key="post_max_size"]');
+  const postMaxSizeContainer = page.locator('[data-key="post_max_size"]');
   await postMaxSizeContainer.locator('input.numeric-part').fill('2');
   await postMaxSizeContainer.locator('select.unit-part').selectOption('G');
   
@@ -165,21 +179,15 @@ test('edit php options', async ({ page }) => {
 
 
 test('edit php.ini files', async ({ page }) => {
-  await page.goto('/php/php_ini_editor');  
-  const dropdown = page.locator('#php_version');
-  const values = await dropdown.locator('option').evaluateAll(options =>
-    options
-      .map(opt => opt.value)
-      .filter(val => val !== '')
-  );
+  await page.goto('/php/php_ini_editor');
+  const values = (await pickerVersions(page, '.ini/editor')).filter(val => val !== '');
 
   if (values.length === 0) {
     throw new Error('No PHP versions available to select.');
   }
 
   const randomVersion = values[Math.floor(Math.random() * values.length)];
-  await dropdown.selectOption(randomVersion);
-  await page.click('#submit_version');
+  await pickVersion(page, randomVersion, '.ini/editor');
   await page.waitForURL(new RegExp(`/php/php${randomVersion}\\.ini/editor`));
 
   const successRegex = new RegExp(`/etc/php/${randomVersion}/fpm/php.ini`, 'i');

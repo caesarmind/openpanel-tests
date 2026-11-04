@@ -8,23 +8,30 @@ async function openExtensionsSelector(page: any) {
   await expect(page).toHaveURL(/php\/extensions/);
 }
 
+// Classic picks the version in a #php_version select, the new theme links each version as a chip
+function versionPicker(page: any) {
+  return page.locator('#php_version option').or(page.locator('a.op-chip[href$="/extensions"]'));
+}
+
+async function installedVersions(page: any): Promise<string[]> {
+  return versionPicker(page).evaluateAll((els: Element[]) =>
+    els.map(el => el instanceof HTMLOptionElement ? el.value : el.getAttribute('href')!.match(/\/php\/php(.+)\/extensions$/)![1]).filter(v => v !== '')
+  );
+}
+
 test('extensions version selector page loads', async ({ page }) => {
   await openExtensionsSelector(page);
   await expect(page.getByRole('heading', { name: /PHP Extensions/i })).toBeVisible();
 
-  const dropdown = page.locator('#php_version');
-  await expect(dropdown).toBeVisible();
-  const optionCount = await dropdown.locator('option').count();
+  await expect(page.locator('#php_version').or(page.locator('.op-chips'))).toBeVisible();
+  const optionCount = await versionPicker(page).count();
   expect(optionCount).toBeGreaterThan(0);
 });
 
 test('select version navigates to per-version extensions page', async ({ page }) => {
   await openExtensionsSelector(page);
 
-  const dropdown = page.locator('#php_version');
-  const values = await dropdown.locator('option').evaluateAll(options =>
-    options.map(opt => (opt as HTMLOptionElement).value).filter(v => v !== '')
-  );
+  const values = await installedVersions(page);
 
   if (values.length === 0) {
     test.skip(true, 'No PHP versions installed');
@@ -32,8 +39,12 @@ test('select version navigates to per-version extensions page', async ({ page })
   }
 
   const version = values[0];
-  await dropdown.selectOption(version);
-  await page.click('#submit_version');
+  if (await page.locator('#php_version').count()) {
+    await page.locator('#php_version').selectOption(version);
+    await page.click('#submit_version');
+  } else {
+    await page.locator(`a.op-chip[href="/php/php${version}/extensions"]`).click();
+  }
 
   await expect(page).toHaveURL(new RegExp(`/php/php${version}/extensions`));
   await expect(page.locator('table')).toBeVisible();
@@ -43,10 +54,7 @@ test('select version navigates to per-version extensions page', async ({ page })
 test('toggle an extension enable/disable', async ({ page }) => {
   await openExtensionsSelector(page);
 
-  const dropdown = page.locator('#php_version');
-  const values = await dropdown.locator('option').evaluateAll(options =>
-    options.map(opt => (opt as HTMLOptionElement).value).filter(v => v !== '')
-  );
+  const values = await installedVersions(page);
 
   if (values.length === 0) {
     test.skip(true, 'No PHP versions installed');
@@ -89,10 +97,7 @@ test('toggle an extension enable/disable', async ({ page }) => {
 test('available extensions list loads in install modal', async ({ page }) => {
   await openExtensionsSelector(page);
 
-  const dropdown = page.locator('#php_version');
-  const values = await dropdown.locator('option').evaluateAll(options =>
-    options.map(opt => (opt as HTMLOptionElement).value).filter(v => v !== '')
-  );
+  const values = await installedVersions(page);
 
   if (values.length === 0) {
     test.skip(true, 'No PHP versions installed');
@@ -106,12 +111,13 @@ test('available extensions list loads in install modal', async ({ page }) => {
     page.waitForResponse(res => res.url().includes(`/php/php${version}/available-extensions`) && res.status() === 200),
     page.click('#open-install-modal'),
   ]);
-  await expect(page.locator('#install-modal')).toBeVisible();
+  // the new theme's modal wrapper has no box of its own, only the fixed sheet inside it does
+  await expect(page.locator('#available-extensions-list')).toBeVisible();
 
   const list = page.locator('#available-extensions-list');
   await expect(list).not.toContainText('Loading...');
   console.log(`available extensions list for PHP ${version} loaded`);
 
   await page.click('#cancel-install-modal');
-  await expect(page.locator('#install-modal')).toBeHidden();
+  await expect(page.locator('#available-extensions-list')).toBeHidden();
 });

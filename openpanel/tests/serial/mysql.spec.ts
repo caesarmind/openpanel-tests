@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { bulkRun, bulkSelect, bulkSelectAllAndClear, bulkSelectKeys } from '../../helpers';
 import fs from 'fs';
 import os from 'os';
@@ -24,6 +24,16 @@ async function getDatabaseCount(page: Page): Promise<number> {
 }
 
 
+// the new form's alpine model clears a name typed before it started, so type again until it sticks and Create is enabled
+async function fillDatabaseName(page: Page, name: string) {
+  const nameInput = page.getByRole('textbox', { name: 'Database Name' });
+  await expect(async () => {
+    await nameInput.fill(name);
+    await expect(nameInput).toHaveValue(name, { timeout: 1000 });
+    await expect(page.getByRole('button', { name: 'Create Database' })).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 20000 });
+}
+
 async function expectDatabaseInTable(page: Page, dbName: string) {
   const row = page.locator('tr', { hasText: dbName });
   await expect(row).toBeVisible();
@@ -33,16 +43,40 @@ async function expectDatabaseNotInTable(page: Page, dbName: string) {
   await expect(page.locator('tr', { hasText: dbName })).toHaveCount(0);
 }
 
+// the old rows have a delete button that turns into a btn-dark confirm, the new ones keep delete in the row's actions menu
+async function deleteRow(page: Page, row: Locator) {
+  const direct = row.locator('button.btn-danger');
+  if (await direct.count()) {
+    await direct.click();
+    const confirmButton = page.locator('button.btn-dark:visible');
+    await expect(confirmButton.first()).toBeVisible();
+    await confirmButton.first().click();
+    return;
+  }
+  await row.getByRole('button', { name: /^Actions/ }).click();
+  const del = row.locator('.op-menu button.is-danger');
+  // a database delete relabels itself Confirm for five seconds, a user delete asks with a browser confirm
+  if (await del.getAttribute('onclick')) {
+    await del.click();
+    await row.getByRole('button', { name: /^confirm/i }).click();
+  } else {
+    page.once('dialog', (dialog) => dialog.accept());
+    await del.click();
+  }
+}
+
 // drop a row (db or user) left behind by an earlier aborted run
 async function deleteRowIfExists(page: Page, url: string, name: string) {
   await page.goto(url);
   const row = page.locator('tr', { hasText: name });
   if (!(await row.count())) return;
-  await row.locator('button.btn-danger').click();
-  const confirmButton = page.locator('button.btn-dark:visible');
-  await expect(confirmButton.first()).toBeVisible();
-  await confirmButton.first().click();
+  await deleteRow(page, row);
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
+}
+
+// the new assign page calls it Save Privileges
+function makeChangesButton(page: Page) {
+  return page.getByRole('button', { name: 'Make Changes' }).or(page.getByRole('button', { name: 'Save Privileges' }));
 }
 
 
@@ -69,11 +103,12 @@ test('create database', async ({ page }) => {
   // 2. Now navigate to MySQL and perform the action
   await navigateToMySQLPage(page);
   await page.locator('a[href="/mysql/new"]').first().click();
-  await page.getByRole('textbox', { name: 'Database Name' }).fill('stefan_baza');
+  await fillDatabaseName(page, 'stefan_baza');
   await page.getByRole('button', { name: 'Create Database' }).click();
   await expect(page.locator('body')).toContainText(/successfully created a database/i);
 
-  // 3. Validate in the table (still on MySQL page)
+  // 3. Validate in the table, the new create page stays on a done screen
+  await navigateToMySQLPage(page);
   await expectDatabaseInTable(page, 'stefan_baza');
   expectedCount++;
 
@@ -89,7 +124,8 @@ test('create database', async ({ page }) => {
 test('show system databases', async ({ page }) => {
   await navigateToMySQLPage(page);
 
-  await page.getByText('Show system databases').click();
+  // the new toggle is labelled System databases
+  await page.locator('label[for="showAllCheckbox"]').click();
   await expect(page.locator('body')).toContainText(/information_schema/i);
 
   console.log('show system databases working');
@@ -147,13 +183,15 @@ test('create user', async ({ page }) => {
   await page.locator('a[href="/mysql/user"]').first().click();
   await expect(page).toHaveURL(/.*mysql\/user/);
 
-  await page.getByRole('textbox', { name: 'Username*' }).fill('stefan_user');
-  await page.getByRole('textbox', { name: 'Password*' }).fill('stefan94');
+  // the new labels have a space before the *, both themes use these ids
+  await page.locator('#username').fill('stefan_user');
+  await page.locator('#password').fill('stefan94');
   await page.getByRole('button', { name: 'Create User' }).click();
 
   await expect(page.locator('body')).toContainText(/successfully created a database user stefan_user/i);
 
-  await page.getByRole('link', { name: 'Back to Users' }).click();
+  // the new page shows the credentials once with a View Users link
+  await page.getByRole('link', { name: 'Back to Users' }).or(page.getByRole('link', { name: 'View Users' })).click();
   await expect(page).toHaveURL(/.*mysql\/users/);
   await expect(page.locator('body')).toContainText(/stefan_user/i);
   
@@ -171,7 +209,10 @@ test('change password', async ({ page }) => {
   const username = 'stefan_user';
   const firstRow = page.locator('#users-table tbody tr', { has: page.locator('[data-sort-col="username"]', { hasText: new RegExp(`^\\s*${username}\\s*$`) }) });
 
-  await firstRow.getByRole('link', { name: 'Change Password' }).click();
+  const changeLink = firstRow.getByRole('link', { name: 'Change Password' });
+  // the new row keeps it in the actions menu
+  if (!(await changeLink.isVisible())) await firstRow.getByRole('button', { name: /^Actions/ }).click();
+  await changeLink.click();
   await expect(page).toHaveURL(/.*mysql\/password/);
   // the generate button only works once the page's script has run
   await page.waitForLoadState('load');
@@ -193,10 +234,8 @@ test('change password', async ({ page }) => {
 test('grant CREATE ROUTE privilege', async ({ page }) => {
   await page.goto(`/mysql/users`);
 
-  const [response] = await Promise.all([
-    page.waitForResponse(resp => resp.url().includes('/mysql/info') && resp.status() === 200),
-    page.getByRole('link', { name: 'Assign User to Database' }).click(),
-  ]);
+  // the old page fills the selects from /mysql/info, the new one has them inline, selectOption waits for the options either way
+  await page.getByRole('link', { name: 'Assign User to Database' }).click();
 
   await expect(page).toHaveURL(/.*mysql\/assign/);
 
@@ -207,9 +246,11 @@ test('grant CREATE ROUTE privilege', async ({ page }) => {
     page.locator('select[name="database_name"]').selectOption('stefan_baza'),
   ]);
 
+  // the new page ticks everything for a user with no privileges yet, start from none like the old one
+  await page.getByRole('checkbox', { name: 'ALL PRIVILEGES' }).uncheck();
   await page.getByRole('checkbox', { name: 'ALTER', exact: true }).check();
   await page.getByRole('checkbox', { name: 'CREATE ROUTINE' }).check();
-  await page.getByRole('button', { name: 'Make Changes' }).click();
+  await makeChangesButton(page).click();
 
   await expect(page.locator('body')).toContainText(
     /Privileges granted successfully for user\s+'.+?'\s+on database\s+'.+?'/i
@@ -221,12 +262,7 @@ test('grant CREATE ROUTE privilege', async ({ page }) => {
 test('grant NO privileges', async ({ page }) => {
   await page.goto('/mysql/users');
 
-  await Promise.all([
-    page.waitForResponse(resp =>
-      resp.url().includes('/mysql/info') && resp.status() === 200
-    ),
-    page.getByRole('link', { name: 'Assign User to Database' }).click(),
-  ]);
+  await page.getByRole('link', { name: 'Assign User to Database' }).click();
 
   await expect(page).toHaveURL(/.*mysql\/assign/);
 
@@ -236,7 +272,8 @@ test('grant NO privileges', async ({ page }) => {
     page.locator('select[name="database_name"]').selectOption('stefan_baza'),
   ]);
 
-  await page.getByRole('link', { name: 'Back to Databases' }).click();
+  // the new assign page goes back to Users, its Databases tab leads to the list
+  await page.getByRole('link', { name: 'Back to Databases' }).or(page.locator('#page-tabs a[href="/mysql"]')).click();
   await expect(page).toHaveURL(/.*mysql/);
 
   await expect(page.locator('body')).toContainText(/stefan_user/i);
@@ -249,23 +286,29 @@ test('grant NO privileges', async ({ page }) => {
 
   await expect(page.locator('select[name="db_user"]')).toHaveValue('stefan_user');
   
-  const privilegeCheckboxes = page.locator('input[name="privileges"]');
+  // the new checkboxes have no name, the page posts hidden privileges inputs instead
+  const privilegeCheckboxes = page.locator('input[type="checkbox"][name="privileges"], .op-priv-head input[type="checkbox"], .op-priv-groups input[type="checkbox"]');
 
   for (let i = 0; i < await privilegeCheckboxes.count(); i++) {
     const checkbox = privilegeCheckboxes.nth(i);
-  
+
     if (await checkbox.isChecked()) {
       await checkbox.uncheck({ force: true });
     }
-  
+
     await expect(checkbox).not.toBeChecked();
   }
 
-  await page.getByRole('button', { name: 'Make Changes' }).click();
-
-  await expect(page.locator('body')).toContainText(
-    /at least one privilege must be selected/i
-  );
+  const makeChanges = makeChangesButton(page);
+  if (await makeChanges.isEnabled()) {
+    await makeChanges.click();
+    await expect(page.locator('body')).toContainText(
+      /at least one privilege must be selected/i
+    );
+  } else {
+    // the new page checks this before posting, it disables save and shows the error itself
+    await expect(page.getByText(/at least one privilege must be selected/i)).toBeVisible();
+  }
 
   console.log('granting no privileges does show error');
 });
@@ -275,12 +318,7 @@ test('grant NO privileges', async ({ page }) => {
 test('grant ALL PRIVILEGES', async ({ page }) => {
   await page.goto('/mysql/users');
 
-  await Promise.all([
-    page.waitForResponse(resp =>
-      resp.url().includes('/mysql/info') && resp.status() === 200
-    ),
-    page.getByRole('link', { name: 'Assign User to Database' }).click(),
-  ]);
+  await page.getByRole('link', { name: 'Assign User to Database' }).click();
 
   await expect(page).toHaveURL(/.*mysql\/assign/);
 
@@ -294,7 +332,7 @@ test('grant ALL PRIVILEGES', async ({ page }) => {
   await page.getByRole('checkbox', { name: 'ALTER', exact: true }).check();
   await page.getByRole('checkbox', { name: 'ALL PRIVILEGES' }).check();
 
-  await page.getByRole('button', { name: 'Make Changes' }).click();
+  await makeChangesButton(page).click();
 
   await expect(page.locator('body')).toContainText(
     /Privileges granted successfully for user\s+'.+?'\s+on database\s+'.+?'/i
@@ -339,6 +377,9 @@ test('revoke privileges', async ({ page }) => {
 
 
 test('database wizard', async ({ page }) => {
+  // a stopped run leaves these behind, and the new wizard won't submit names that already exist
+  await deleteRowIfExists(page, '/mysql', 'proba');
+  await deleteRowIfExists(page, '/mysql/users', 'novi_user');
   await page.goto('/mysql/wizard');
   await expect(page).toHaveURL(/.*mysql\/wizard/);
 
@@ -491,7 +532,8 @@ INSERT INTO users VALUES (1, 'John');
   await page.locator('select[name="database_name"]').selectOption('proba');
   await page.locator('input[name="db_file"]').setInputFiles(tempFilePath);
 
-  await page.getByRole('button', { name: /Upload & Import/i }).click();
+  // the new button just says Import
+  await page.getByRole('button', { name: /Upload & Import/i }).or(page.getByRole('button', { name: 'Import', exact: true })).click();
   await expect(page.locator('body')).toContainText(/Successfully imported from test-import.sql file to database: proba/i);
 
   await navigateToMySQLPage(page);
@@ -523,30 +565,40 @@ test('export', async ({ page }) => {
 
   await expect(row).toBeVisible();
 
+  // the old row has an Export button and box, the new one keeps Export in the actions menu and opens a dialog outside the row
+  const exportPanel = page.locator('.export-section:visible');
+
   async function openExportDropdown() {
     const exportButton = row.locator('button[title="Export"]');
-    const exportBox = row.locator('.export-section');
+    const actionsButton = row.getByRole('button', { name: /^Actions/ });
+    const menuExport = row.getByRole('button', { name: 'Export', exact: true });
 
     await row.scrollIntoViewIfNeeded();
 
-    if (!(await exportBox.isVisible())) {
-      await expect(exportButton).toBeVisible();
+    if (!(await exportPanel.isVisible())) {
+      await expect(exportButton.or(actionsButton)).toBeVisible();
       // a click before alpine has started on the page does nothing, so click again until it opens
       await expect(async () => {
-        if (!(await exportBox.isVisible())) await exportButton.click();
-        await expect(exportBox).toBeVisible({ timeout: 2000 });
+        if (!(await exportPanel.isVisible())) {
+          if (await exportButton.count()) {
+            await exportButton.click();
+          } else {
+            if (!(await menuExport.isVisible())) await actionsButton.click();
+            await menuExport.click({ timeout: 2000 });
+          }
+        }
+        await expect(exportPanel).toBeVisible({ timeout: 2000 });
       }).toPass({ timeout: 20000 });
     }
 
-    return exportBox;
+    return exportPanel;
   }
 
   async function closeExportDropdown() {
-    const exportBox = row.locator('.export-section');
 
-    if (await exportBox.isVisible()) {
+    if (await exportPanel.isVisible()) {
       await page.keyboard.press('Escape');
-      await expect(exportBox).toBeHidden();
+      await expect(exportPanel).toBeHidden();
     }
   }
 
@@ -660,11 +712,7 @@ test('delete user', async ({ page }) => {
   // scope to our user, the wizard adds others
   const row = page.locator('tr', { hasText: 'stefan_user' });
   await expect(row).toBeVisible();
-  await row.locator('button.btn-danger').click();
-
-  const confirmButton = page.locator('button.btn-dark:visible');
-  await expect(confirmButton.first()).toBeVisible();
-  await confirmButton.first().click();
+  await deleteRow(page, row);
 
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
   await page.goto(`/mysql/users`);
@@ -682,14 +730,9 @@ test('delete database', async ({ page }) => {
   await navigateToMySQLPage(page);
   const dbName = 'stefan_baza';
   const row = page.locator('tr', { hasText: dbName });
-  const deleteButton = row.locator('button.btn-danger');
 
-  await expect(deleteButton).toBeVisible();
-  await deleteButton.click();
-
-  const confirmButton = page.locator('button.btn-dark');
-  await expect(confirmButton).toBeVisible();
-  await confirmButton.click();
+  await expect(row).toBeVisible();
+  await deleteRow(page, row);
 
   await expect(page.locator('body')).toContainText(/successfully deleted/i);
 
@@ -711,7 +754,7 @@ async function createDatabase(page: Page, name: string) {
   await deleteRowIfExists(page, '/mysql', name);
   await navigateToMySQLPage(page);
   await page.locator('a[href="/mysql/new"]').first().click();
-  await page.getByRole('textbox', { name: 'Database Name' }).fill(name);
+  await fillDatabaseName(page, name);
   await page.getByRole('button', { name: 'Create Database' }).click();
   await expect(page.locator('body')).toContainText(/successfully created a database/i);
 }
@@ -719,8 +762,8 @@ async function createDatabase(page: Page, name: string) {
 async function createUser(page: Page, name: string) {
   await deleteRowIfExists(page, '/mysql/users', name);
   await page.goto('/mysql/user');
-  await page.getByRole('textbox', { name: 'Username*' }).fill(name);
-  await page.getByRole('textbox', { name: 'Password*' }).fill('stefan94bulk');
+  await page.locator('#username').fill(name);
+  await page.locator('#password').fill('stefan94bulk');
   await page.getByRole('button', { name: 'Create User' }).click();
   await expect(page.locator('body')).toContainText(new RegExp(`successfully created a database user ${name}`, 'i'));
 }

@@ -6,6 +6,10 @@ async function navigateToPage(page: any, service: string) {
   await expect(page).toHaveURL(new RegExp(`cache/${service}`));
 }
 
+// the new theme has a switch labelled Click to Enable/Disable instead of a text button
+const toggleButton = (page: any, label: string) =>
+  page.locator('button', { hasText: label }).or(page.getByRole('switch', { name: label }));
+
 // cache services
 const services = [
   {
@@ -170,7 +174,7 @@ for (const service of services) {
     await navigateToPage(page, service.name);
     const initialStatus = await page.locator('#service-page-status').textContent();
     if (initialStatus?.trim() === 'Running') {
-      const disableBtnPre = page.locator('button', { hasText: 'Click to Disable' });
+      const disableBtnPre = toggleButton(page, 'Click to Disable');
       await disableBtnPre.click();
       await expect(page.locator('text=is now disabled')).toBeVisible();
       await expect(page.locator('#service-page-status')).toHaveText('Disabled');
@@ -188,7 +192,7 @@ for (const service of services) {
     console.log(`${service.name} page has expected info`);
 
     // ENABLE
-    const enableBtn = page.locator('button', { hasText: 'Click to Enable' });
+    const enableBtn = toggleButton(page, 'Click to Enable');
     await enableBtn.click();
     await expect(page.locator('text=is now enabled')).toBeVisible();
 
@@ -220,7 +224,8 @@ for (const service of services) {
       throw new Error(`${service.name} did not reach Running state within ${timeoutMs}ms`);
     }
 
-    const greenBars = page.locator('.bg-emerald-500').first();
+    // the new theme colours the status badge instead of the bars
+    const greenBars = page.locator('.bg-emerald-500').first().or(page.locator('#service-page-status.is-success'));
     await expect(greenBars).toBeVisible();
     console.log(`${service.name} starts successfully`);
 
@@ -249,9 +254,8 @@ for (const service of services) {
     await navigateToPage(page, service.name);
     
     const statsContainer = page.locator('#service-page-stats');
-    await expect(statsContainer.locator('span.font-medium').filter({ hasText: '--' })).toHaveCount(0, { timeout: 15000 });
-    const getStat = (label) => statsContainer.locator('div', { hasText: label }).locator('span.font-medium').last();
-    
+    await expect(statsContainer.locator('span.font-medium, .op-kpi-value, [data-stat]').filter({ hasText: '--' })).toHaveCount(0, { timeout: 15000 });
+
     const statItems = statsContainer.locator('div.flex.items-center.justify-between');
           
     const count = await statItems.count();
@@ -263,13 +267,37 @@ for (const service of services) {
       const value = await item.locator('span').last().innerText();
       stats[label.trim()] = value.trim();
     }
-    
+
+    // the new theme shows cards instead, memory %, the limits, bytes sent and block i/o sit in the card notes
+    const cards = statsContainer.locator('.op-kpi');
+    for (let i = 0; i < await cards.count(); i++) {
+      const label = (await cards.nth(i).locator('.op-kpi-label').innerText()).trim();
+      const value = (await cards.nth(i).locator('.op-kpi-value').innerText()).trim();
+      const note = (await cards.nth(i).locator('.op-kpi-note').innerText()).trim();
+      if (label === 'Memory Usage') {
+        const [perc, limit] = note.split(' · ');
+        stats['Memory %'] = perc;
+        stats[label] = `${value} / ${limit?.replace(/^Limit\s*/, '')}`;
+      } else if (label === 'Network I/O') {
+        stats[label] = `${value} / ${note.replace(/^received,\s*/, '').replace(/\s*sent$/, '')}`;
+      } else if (label === 'PIDs') {
+        stats[label] = value;
+        stats['Block I/O'] = note.replace(/^Block I\/O\s*/, '');
+      } else {
+        stats[label] = value;
+      }
+    }
+    // and the container name and id in the line above the cards
+    for (const el of await statsContainer.locator('[data-stat]').all()) {
+      stats[(await el.getAttribute('data-stat'))!] = (await el.innerText()).trim();
+    }
+
     const requiredKeys = ['ID', 'Name', 'CPU Usage', 'Memory Usage', 'Memory %', 'Network I/O', 'Block I/O', 'PIDs'];
     for (const key of requiredKeys) {
       expect(stats).toHaveProperty(key, expect.any(String));
     }
     
-    await expect(getStat('Name')).toHaveText(service.name);
+    expect(stats['Name']).toBe(service.name);
     
     const validations = {
       'ID':           { re: /^[a-f0-9]{12}$/,                    desc: '12 hex chars' },
@@ -287,7 +315,8 @@ for (const service of services) {
     }  
 
     // LOGS
-    await page.click('button:has-text("View container log")');
+    // the new theme loads the log on its own and relabels this button to Refresh
+    await page.locator('#service-log').click();
     await page.waitForTimeout(1000);
     const logContent = page.locator('#log-content');
     await expect(logContent).not.toHaveText('No logs.');
@@ -296,11 +325,11 @@ for (const service of services) {
 
     // DISABLE
     await navigateToPage(page, service.name);
-    const disableBtn = page.locator('button', { hasText: 'Click to Disable' });
+    const disableBtn = toggleButton(page, 'Click to Disable');
     await disableBtn.click();
     await expect(page.locator('text=is now disabled')).toBeVisible();
     await expect(page.locator('#service-page-status')).toHaveText('Disabled');
-    await expect(page.locator('.bg-gray-400').first()).toBeVisible();
+    await expect(page.locator('.bg-gray-400').first().or(page.locator('#service-page-status.is-muted'))).toBeVisible();
     console.log(`${service.name} is disabled successfully`);
   });
 }

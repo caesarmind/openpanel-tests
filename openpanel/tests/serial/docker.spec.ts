@@ -43,9 +43,9 @@ test('containers page loads with header and table', async ({ page }) => {
   await expect(page.locator('h1')).toContainText('Containers');
   await expect(page.locator('#containers-table')).toBeVisible();
 
-  // Total CPU and RAM should be shown
-  await expect(page.locator('text=Total CPU')).toBeVisible();
-  await expect(page.locator('text=Total Memory')).toBeVisible();
+  // Total CPU and RAM should be shown, the new theme has them under the CPU and Memory cards
+  await expect(page.locator('text=Total CPU').or(page.locator('.op-kpi-note', { hasText: /^of [\d.]+ cores$|^No CPU limit$/ }))).toBeVisible();
+  await expect(page.locator('text=Total Memory').or(page.locator('.op-kpi-note', { hasText: /^of [\d.]+ GB$|^No memory limit$/ }))).toBeVisible();
 });
 
 test('containers search filters rows', async ({ page }) => {
@@ -67,7 +67,7 @@ test('containers search filters rows', async ({ page }) => {
 
 test('containers page New Service button navigates to add form', async ({ page }) => {
   await page.goto('/containers');
-  await page.getByRole('link', { name: 'New Service' }).click();
+  await page.getByRole('link', { name: /^(New Service|Add a container)$/ }).first().click();
   await page.waitForLoadState('networkidle');
   expect(page.url()).toContain('/containers/new');
   await expect(page.locator('h1')).toContainText('Add a container');
@@ -174,7 +174,8 @@ test('add new service form loads', async ({ page }) => {
   await expect(page.locator('input#image')).toBeVisible();
   await expect(page.locator('input#cpu')).toBeVisible();
   await expect(page.locator('input#ram_amount')).toBeVisible();
-  await expect(page.locator('main button[type="submit"]')).toBeVisible();
+  // the new theme repeats the submit button in the page header
+  await expect(page.locator('main button[type="submit"]').first()).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).locator('a[href="/containers"]')).toBeVisible();
 });
 
@@ -196,7 +197,7 @@ test('add new service - invalid name shows error', async ({ page }) => {
   const serviceName = page.locator('#service_name');
   const cpu = page.locator('#cpu');
   const ram = page.locator('#ram_amount');
-  const submit = page.locator('main button[type="submit"]');
+  const submit = page.locator('main button[type="submit"]').first();
 
   // Invalid service name
   await image.fill('nginx:latest');
@@ -263,7 +264,7 @@ test('add new service - add and remove volume entry', async ({ page }) => {
 
   // Find the generated volume row
   const volumeRow = page
-    .locator('div.mb-2.flex')
+    .locator('div.mb-2.flex, div.op-ct-vol')
     .filter({ has: page.locator('select[name="volume_name"]') })
     .last();
 
@@ -350,9 +351,10 @@ test('delete confirm - php-fpm service returns 403', async ({ page }) => {
 test('change mysql page loads', async ({ page }) => {
   await page.goto('/containers/mysql');
 
+  // the new theme puts the label on a plain div, which isn't a region
   const section = page.getByRole('region', {
     name: 'Change Database Server',
-  });
+  }).or(page.locator('[aria-label="Change Database Server"]'));
 
   // Page heading
   await expect(
@@ -367,17 +369,17 @@ test('change mysql page loads', async ({ page }) => {
     section.getByText('Current', { exact: true })
   ).toBeVisible();
 
-  // All available database server options should be present
+  // All available database server options should be present, the new theme puts the Current badge inside the name
   await expect(
-    section.getByText('MySQL', { exact: true })
+    section.getByText(/^MySQL( Current)?$/)
   ).toBeVisible();
 
   await expect(
-    section.getByText('MariaDB', { exact: true })
+    section.getByText(/^MariaDB( Current)?$/)
   ).toBeVisible();
 
   await expect(
-    section.getByText('Percona', { exact: true })
+    section.getByText(/^Percona( Current)?$/)
   ).toBeVisible();
 
   // with databases left from earlier specs the switch is blocked and says why, otherwise it warns what switching does
@@ -409,9 +411,9 @@ test('change mysql page loads', async ({ page }) => {
 test('change webserver page loads', async ({ page }) => {
   await page.goto('/containers/webserver');
 
-  // Page heading
+  // Page heading, the new theme calls it Web Server Type
   await expect(
-    page.getByRole('heading', { name: 'Webserver', exact: true })
+    page.getByRole('heading', { name: /^(Webserver|Web Server Type)$/ })
   ).toBeVisible();
 
   // Page description
@@ -419,11 +421,11 @@ test('change webserver page loads', async ({ page }) => {
     page.getByText('Choose the webserver that will power your websites.')
   ).toBeVisible();
 
-  // Available webserver options
-  await expect(page.getByText('Apache', { exact: true })).toBeVisible();
-  await expect(page.getByText('Nginx', { exact: true })).toBeVisible();
-  await expect(page.getByText('OpenLiteSpeed', { exact: true })).toBeVisible();
-  await expect(page.getByText('OpenResty', { exact: true })).toBeVisible();
+  // Available webserver options, the new theme puts the Current badge inside the name
+  await expect(page.getByText(/^Apache( Current)?$/)).toBeVisible();
+  await expect(page.getByText(/^Nginx( Current)?$/)).toBeVisible();
+  await expect(page.getByText(/^OpenLiteSpeed( Current)?$/)).toBeVisible();
+  await expect(page.getByText(/^OpenResty( Current)?$/)).toBeVisible();
 
   // Current webserver should be indicated
   await expect(
@@ -493,14 +495,16 @@ test('logs page - ?container= param pre-selects and loads', async ({ page }) => 
 
 test('terminal page without container shows service picker', async ({ page }) => {
   await page.goto('/containers/terminal');
-  await expect(page.locator('h1')).toContainText('Container Terminal');
-  await expect(page.locator('select#service-select')).toBeVisible();
+  // the new theme's heading is just Terminal
+  await expect(page.locator('h1')).toContainText(/^(Container )?Terminal$/);
+  // with a service running it now opens on that container, which has its own picker
+  await expect(page.locator('select#service-select, select#term-container')).toBeVisible();
 });
 
 test('terminal page - selecting service redirects', async ({ page }) => {
   await page.goto('/containers/terminal');
 
-  const select = page.locator('select#service-select');
+  const select = page.locator('select#service-select, select#term-container');
   const options = select.locator('option:not([disabled])');
   const count = await options.count();
 
@@ -508,7 +512,7 @@ test('terminal page - selecting service redirects', async ({ page }) => {
     const value = await options.first().getAttribute('value');
     await select.selectOption(value);
     await page.waitForURL(`**/containers/terminal/${value}`, { timeout: 5000 });
-    await expect(page.locator('h1')).toContainText('Container Terminal');
+    await expect(page.locator('h1')).toContainText(/^(Container )?Terminal$/);
     await expect(page.locator('#terminal')).toBeVisible();
     await expect(page.locator('select#shell')).toBeVisible();
   } else {
@@ -538,9 +542,9 @@ test('terminal - reconnect button appears after disconnect', async ({ page }) =>
   await page.goto('/containers/terminal/php-fpm-8.5');
   await page.waitForTimeout(2000);
 
-  // Status dot and text should be present
-  await expect(page.locator('#status-dot')).toBeVisible();
-  await expect(page.locator('#status-text')).toBeVisible();
+  // Status dot and text should be present, the new theme has one #term-status badge for both
+  await expect(page.locator('#status-dot, #term-status')).toBeVisible();
+  await expect(page.locator('#status-text, #term-status')).toBeVisible();
 
   // Shell selector should be set to bash/sh
   const shell = await page.locator('select#shell').inputValue();
@@ -578,7 +582,11 @@ test('bulk actions', async ({ page }) => {
     await page.locator('#service_name').fill(service);
     await page.locator('#cpu').fill('0.5');
     await page.locator('#ram_amount').fill('1');
-    await page.locator('main button[type="submit"]').click();
+    // the new theme creates it over a fetch stream, navigating away right after the click would cut it off
+    await Promise.all([
+      page.waitForURL(url => !url.pathname.startsWith('/containers/new'), { timeout: 120_000 }),
+      page.locator('main button[type="submit"]').first().click(),
+    ]);
     await expect.poll(async () => { await page.goto('/containers'); return box(service).count(); }, { timeout: 120_000, intervals: [3000] }).toBe(1);
   }
 

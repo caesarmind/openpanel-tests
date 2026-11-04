@@ -18,7 +18,8 @@ test('traffic stats page loads', async ({ page }) => {
     page.getByRole('heading', { name: 'Visitor Statistics', exact: true })
   ).toBeVisible();
 
-  await expect(page.locator('#domains')).toBeVisible();
+  // the domain picker, #domains in the old theme, a select labelled Domain in the new header
+  await expect(page.locator('#domains').or(page.getByRole('combobox', { name: 'Domain', exact: true }))).toBeVisible();
 
   console.log('traffic stats page accessible');
 });
