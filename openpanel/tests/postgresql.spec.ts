@@ -36,8 +36,9 @@ async function openNewDatabaseForm(page: any) {
   }).toPass({ timeout: 8 * 60_000, intervals: [10_000] });
 }
 
-// the new form's alpine model clears a name typed before it started, so type again until it sticks and Create is enabled
+// the new form's alpine model clears a name typed before it starts (by domcontentloaded), so wait for that and type until the name sticks
 async function fillDatabaseName(page: any, name: string) {
+  await page.waitForURL(/\/new(\?|$)/, { waitUntil: 'domcontentloaded' });
   const nameInput = page.getByRole('textbox', { name: 'Database Name' });
   await expect(async () => {
     await nameInput.fill(name);

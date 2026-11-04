@@ -24,8 +24,9 @@ async function getDatabaseCount(page: Page): Promise<number> {
 }
 
 
-// the new form's alpine model clears a name typed before it started, so type again until it sticks and Create is enabled
+// the new form's alpine model clears a name typed before it starts (by domcontentloaded), so wait for that and type until the name sticks
 async function fillDatabaseName(page: Page, name: string) {
+  await page.waitForURL(/\/new(\?|$)/, { waitUntil: 'domcontentloaded' });
   const nameInput = page.getByRole('textbox', { name: 'Database Name' });
   await expect(async () => {
     await nameInput.fill(name);
