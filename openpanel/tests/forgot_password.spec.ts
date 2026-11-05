@@ -38,7 +38,8 @@ test('submit invalid email format shows error', async ({ page }) => {
   const emailInput = page.locator('input[type="email"], input[name="email"]');
   const isInvalid = await emailInput.evaluate((el: HTMLInputElement) => !el.validity.valid);
   const hasError = await page.locator('body').textContent().then(t =>
-    /error|invalid|not found|required/i.test(t ?? '')
+    // the panel answers "Please enter a valid email address."
+    /error|invalid|valid email|not found|required/i.test(t ?? '')
   );
 
   expect(isInvalid || hasError).toBe(true);
@@ -52,8 +53,9 @@ test('submit valid email shows confirmation', async ({ page }) => {
   await page.locator('input[type="email"], input[name="email"]').fill('nonexistent@openpanel.com');
   await page.getByRole('button', { name: /reset|send|submit/i }).click();
 
-  await expect(page.locator('body')).toContainText(/not found/i, { timeout: 10000 });
-  console.log('non-existent email shows not found error');
+  // the panel shows the same page for unknown emails so the form can't tell which ones have accounts
+  await expect(page.getByRole('heading', { name: 'Password Reset Link Sent' })).toBeVisible({ timeout: 10000 });
+  console.log('reset request shows the link sent page');
 });
 
 
