@@ -19,7 +19,8 @@ test('access backup settings', async ({ page }) => {
 
 test('save backup settings', async ({ page }) => {
   await page.goto('/backups/settings');
-  await page.getByRole('button', { name: 'Save settings' }).click();
+  // the new page has the same submit in its header and its save bar
+  await page.getByRole('button', { name: 'Save settings' }).first().click();
   await expect(page.locator('body')).toContainText(/saved|success|updated/i);
   console.log('backup settings saved');
 });
