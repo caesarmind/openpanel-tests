@@ -73,14 +73,27 @@ test('containers page New Service button navigates to add form', async ({ page }
   await expect(page.locator('h1')).toContainText('Add a container');
 });
 
+// the new theme keeps start, stop and the resource limits dialog in the row's menu instead of inline
+async function isMenuRow(row: Locator): Promise<boolean> {
+  return (await row.locator('td.op-cell-menu').count()) > 0;
+}
+
 // sets a cpu or ram limit inline on the row, returns what was set before
 async function setLimit(page: Page, row: Locator, kind: 'cpu' | 'ram', value: string): Promise<string> {
-  const cell = row.locator(`td[x-show*="${kind}"]`);
-  await row.hover();
-  await cell.hover();
-  await cell.locator('a').first().click();
+  let form: Locator;
+  const menuRow = await isMenuRow(row);
+  if (menuRow) {
+    await row.locator('td.op-cell-menu > button').click({ timeout: 30_000 });
+    await row.getByRole('button', { name: 'Resource limits' }).click({ timeout: 30_000 });
+    form = page.locator(`form[action^="/containers/${kind}/"]`);
+  } else {
+    form = row.locator(`td[x-show*="${kind}"]`);
+    await row.hover();
+    await form.hover();
+    await form.locator('a').first().click();
+  }
 
-  const input = cell.locator('input[name="value"]');
+  const input = form.locator('input[name="value"]');
   await expect(input).toBeVisible();
   const before = await input.inputValue();
   await input.fill(value);
@@ -88,22 +101,47 @@ async function setLimit(page: Page, row: Locator, kind: 'cpu' | 'ram', value: st
   await Promise.all([
     page.waitForResponse(resp =>
       resp.url().includes(`/containers/${kind}/`) && resp.request().method() === 'POST'
-    ),
-    cell.locator('button[type="submit"]').click(),
+    , { timeout: 120_000 }),
+    // the dialog's form reloads the page, and the next limit would open the dialog on the page being replaced
+    menuRow ? page.waitForEvent('framenavigated', { timeout: 120_000 }) : Promise.resolve(),
+    form.locator('button[type="submit"]').click({ timeout: 30_000 }),
   ]);
+  if (menuRow) await page.waitForLoadState('load');
   await expect(input).toBeHidden();
   return before;
 }
 
-async function startStop(page: Page, row: Locator, action: 'start' | 'stop') {
-  await row.hover();
-  const btn = row.locator('td[x-show*="actions"]').getByRole('button', { name: action === 'start' ? 'Start' : 'Stop', exact: true }).first();
-  await Promise.all([
-    page.waitForResponse(resp =>
-      resp.url().includes(`/containers/${action}/`) && resp.request().method() === 'POST'
-    ),
-    btn.click(),
-  ]);
+// the menu's start and stop items follow the live stats, so a running container's stop shows once they load
+function menuItem(page: Page, action: 'start' | 'stop', service: string): Locator {
+  return page.locator(`[id="${action}-item-${service}"] button`);
+}
+
+async function startStop(page: Page, row: Locator, action: 'start' | 'stop', service = '') {
+  const menuRow = await isMenuRow(row);
+  const response = page.waitForResponse(resp =>
+    resp.url().includes(`/containers/${action}/`) && resp.request().method() === 'POST'
+  , { timeout: 300_000 });
+  if (menuRow) {
+    const navigated = page.waitForEvent('framenavigated', { timeout: 300_000 });
+    // the stats refresh can still list a just stopped container as running and swap the item back, so reopen and retry
+    const btn = menuItem(page, action, service);
+    // a slow stop can time the click out after the form was sent, so stop retrying once the post is out
+    let sent = false;
+    const onRequest = (req: any) => { if (req.url().includes(`/containers/${action}/`) && req.method() === 'POST') sent = true; };
+    page.on('request', onRequest);
+    await expect(async () => {
+      if (sent) return;
+      if (!await btn.isVisible()) await row.locator('td.op-cell-menu > button').click({ timeout: 5_000 });
+      await btn.click({ timeout: 3_000 });
+    }).toPass({ timeout: 90_000 });
+    page.off('request', onRequest);
+    await Promise.all([response, navigated]);
+  } else {
+    await row.hover();
+    const btn = row.locator('td[x-show*="actions"]').getByRole('button', { name: action === 'start' ? 'Start' : 'Stop', exact: true }).first();
+    await Promise.all([response, btn.click({ timeout: 30_000 })]);
+  }
+  if (menuRow) await page.waitForLoadState('load');
   await expect(page.locator('body')).toContainText(action === 'start' ? /(?<!de)activated successfully/i : /deactivated successfully/i);
 }
 
@@ -118,10 +156,14 @@ test('edit cpu, ram and toggle container state for all rows', async ({ page }) =
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
     // cron (ofelia) restart-loops on an account with no cron jobs, so a live limit change can hit it mid-restart
-    const service = (await row.locator('form[action^="/containers/cpu/"]').getAttribute('action'))?.split('/').pop();
+    const service = await isMenuRow(row)
+      ? await row.getAttribute('data-service') ?? ''
+      : (await row.locator('form[action^="/containers/cpu/"]').getAttribute('action'))?.split('/').pop();
     if (service === 'cron') continue;
     // restart-loops on kernel 6.19+, so the panel can't change it, https://github.com/stefanpejcic/OpenPanel/issues/1205
     if (service === 'mongodb') continue;
+    // varnish is turned on from the varnish page, which moves the webserver off its port first, a plain start here can't bind it
+    if (service === 'varnish') continue;
     console.log(`editing container ${service}`);
 
     // 1. EDIT CPU
@@ -139,6 +181,27 @@ test('edit cpu, ram and toggle container state for all rows', async ({ page }) =
     await setLimit(page, rows.nth(i), 'ram', ramBefore);
 
     // 4. TOGGLE STATE, ending where it started
+    if (await isMenuRow(rows.nth(i))) {
+      const stopItem = menuItem(page, 'stop', service!);
+      const expectRunning = async () => {
+        await rows.nth(i).locator('td.op-cell-menu > button').click();
+        await expect(stopItem).toBeVisible({ timeout: 30_000 });
+        await page.keyboard.press('Escape');
+      };
+      // data-running is set by the stats script, the running count leaves "…" once it has run
+      await expect(page.locator('#kpi-running')).not.toHaveText('…', { timeout: 60_000 });
+      if (await rows.nth(i).getAttribute('data-running') === '1') {
+        await startStop(page, rows.nth(i), 'stop', service);
+        await startStop(page, rows.nth(i), 'start', service);
+        await expectRunning();
+      } else {
+        await startStop(page, rows.nth(i), 'start', service);
+        await expectRunning();
+        await startStop(page, rows.nth(i), 'stop', service);
+      }
+      await page.waitForTimeout(2000);
+      continue;
+    }
     const freshRow = rows.nth(i);
     await freshRow.hover();
     const actionsCell = freshRow.locator('td[x-show*="actions"]');
