@@ -145,12 +145,13 @@ export async function runInstaller(page: Page, app: string, timeout: number) {
 
   await clickInstall(page);
 
-  const outcome = page.getByText(/installation completed|install process failed/i).first();
+  // the new theme says "<App> is installed" or "Install failed"
+  const outcome = page.getByText(/installation completed|is installed$|install(?: process)? failed/i).first();
   await expect(outcome).toBeVisible({ timeout });
-  const text = (await outcome.textContent()) ?? '';
-  if (!/installation completed/i.test(text)) {
+  const text = ((await outcome.textContent()) ?? '').trim();
+  if (!/installation completed|is installed$/i.test(text)) {
     const log = await response.then(r => r.text(), () => '(installer output not available)');
-    expect(text, `install failed, installer output:\n${log}`).toMatch(/installation completed/i);
+    expect(text, `install failed, installer output:\n${log}`).toMatch(/installation completed|is installed$/i);
   }
 }
 

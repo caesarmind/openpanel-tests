@@ -81,11 +81,10 @@ test('website builder', async ({ page }) => {
   
   // 3. test view
   await page.goto('/sites');
-  const table = page.locator('tbody.divide-y.divide-gray-200.dark\\:divide-gray-800');
-  await expect(table).toBeVisible();
   await expect(page.locator('tr[id="site-row-website-builder.tests.openpanel.org"]')).toBeVisible();
   console.log('website install is working');
-  await expect(page.locator('a[href="/website-builder/edit?domain=website-builder.tests.openpanel.org"]')).toBeVisible();
+  // the new row links the site name and "Open Website Builder" to the editor
+  await expect(page.locator('a[href="/website-builder/edit?domain=website-builder.tests.openpanel.org"]').first()).toBeVisible();
   console.log('website edit is working');
 
   // test editor
@@ -96,7 +95,8 @@ test('website builder', async ({ page }) => {
   
   // 4. test remove
   await page.goto('/website?domain=website-builder.tests.openpanel.org');
-  await page.locator('a#remove-tab').click();
+  // the new theme's remove tab is a button with the same id
+  await page.locator('#remove-tab').click();
   await page.locator('button#delete-site').click();
   await page.locator('button#confirm-delete-site').click();
   await expect(page.locator('text=Website deleted successfully!')).toBeVisible({ timeout: 30000 });
@@ -111,7 +111,7 @@ test('website builder', async ({ page }) => {
   await expectBuilderOpened(page);
 
   await page.goto('/website?domain=website-builder.tests.openpanel.org');
-  await page.locator('a#remove-tab').click();
+  await page.locator('#remove-tab').click();
   await page.locator('button#detach-site').click();
   await page.locator('button#confirm-detach-site').click();
   await expect(page.locator('text=Website detached successfully!')).toBeVisible({ timeout: 30000 });

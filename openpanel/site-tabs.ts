@@ -25,6 +25,10 @@ export async function deleteApplication(page: Page) {
   // the new trash button is labelled "Delete application" too, so match exactly and leave the new ids out
   const oldButton = page.getByRole('button', { name: 'Delete Application', exact: true }).and(page.locator(':not(#remove-tab):not(#confirm-delete-site)'));
   const newConfirm = page.locator('#confirm-delete-site');
+  // apps that can also be detached ask which one first
+  const pickDelete = page.locator('#delete-site');
+  await expect(oldButton.or(newConfirm).or(pickDelete).first()).toBeVisible();
+  if (await pickDelete.isVisible()) await pickDelete.click();
   await expect(oldButton.or(newConfirm).first()).toBeVisible();
   if (await oldButton.isVisible()) {
     await oldButton.click();

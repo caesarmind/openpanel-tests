@@ -382,11 +382,11 @@ test('general options', async ({ page }) => {
     checked: expectedDefaultPingStatus,
   });
 
-  // Start waiting for backend response BEFORE clicking Save
+  // Start waiting for backend response BEFORE clicking Save, the new theme posts it
   const saveResponsePromise = page.waitForResponse(
     response =>
       response.url().includes('/wordpress/wp-cli/update_site_information') &&
-      response.request().method() === 'GET',
+      ['GET', 'POST'].includes(response.request().method()),
     { timeout: 30_000 }
   );
 
@@ -616,16 +616,16 @@ test('wp remove', async ({ page }) => {
   await expect(uninstallButton).toBeVisible();
   await uninstallButton.click();
 
+  // the new theme confirms with a Delete button and just goes back to /wordpress when done
   const confirmButton = page.getByRole('button', {
     name: /Confirm Uninstall/,
-  });
+  }).or(page.locator('#confirm-delete-site'));
 
   await expect(confirmButton).toBeVisible();
   await confirmButton.click();
 
-  await expect(
-    page.getByText('WordPress uninstalled successfully!', { exact: true })
-  ).toBeVisible({ timeout: 30_000 });
+  const uninstalled = page.getByText('WordPress uninstalled successfully!', { exact: true });
+  await expect.poll(async () => new URL(page.url()).pathname === '/wordpress' || await uninstalled.isVisible(), { timeout: 30_000 }).toBe(true);
 
   await page.goto('/sites');
 
