@@ -5,7 +5,8 @@ import { ensureDomains, waitForCert, withProjectPage } from '../helpers';
 test.use({ ignoreHTTPSErrors: true });
 
 // the custom certificate below is issued for wp.tests.openpanel.org, so no other spec uses this domain
-const DOMAIN = 'wp.tests.openpanel.org';
+// SSL_TEST_DOMAIN points the let's encrypt checks at a name with public dns to this server, when *.tests.openpanel.org doesn't resolve to it
+const DOMAIN = process.env.SSL_TEST_DOMAIN || 'wp.tests.openpanel.org';
 
 test.beforeAll(async ({ browser }, testInfo) => {
   await ensureDomains(browser, testInfo, DOMAIN);
