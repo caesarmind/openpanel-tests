@@ -207,8 +207,8 @@ def update_row(line):
     if not key_prefix:
         return line
 
-    lookup_key = f"{key_prefix}-{os_version}"
-    data = results.get(lookup_key)
+    # OS_MAP keys use the major version, the README can show a point release ("AlmaLinux | 9.7" is almalinux-9)
+    data = results.get(f"{key_prefix}-{os_version}") or results.get(f"{key_prefix}-{os_version.split('.')[0]}")
 
     if data is None:
         return line
